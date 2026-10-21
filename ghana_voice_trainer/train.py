@@ -455,19 +455,28 @@ def train(data_dir: str, output_dir: str, run_name: str,
             pipe = AfricaPipeline(lang=detected_lang, output="ipa")
 
             for txt in test_texts:
-                # Word-separated IPA (sep=""): NO space between characters within word, single space between words
-                raw_ipa = pipe.run(txt.strip(), sep="")
-                w_list = ["".join(ch for ch in w if ch not in PUNCT_SET) for w in raw_ipa.split()]
-                clean_ipa_words = " ".join(w for w in w_list if w)
+                if detected_lang in ("eng", "en", "english"):
+                    import re
+                    tokens = re.findall(r"[\w']+|[.,!?;:]", txt)
+                    res = []
+                    for tok in tokens:
+                        if tok in ".,!?;:":
+                            if res:
+                                res[-1] = res[-1] + tok
+                        else:
+                            res.append(pipe.run(tok, sep="").strip())
+                    ipa_words = " ".join(res)
+                else:
+                    ipa_words = pipe.run(txt.strip(), sep="").strip()
 
                 if no_ref:
-                    chat = f"{TOKEN_TEXT_START}{clean_ipa_words.strip()}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}"
+                    chat = f"{TOKEN_TEXT_START}{ipa_words.strip()}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}"
                 else:
                     ref_cand = full_dataset.samples[full_dataset._ref_indices[0]]
                     ref_phones = clean_reference_phones(ref_cand["phones"])
                     ref_codes = ref_cand["codes"][:MAX_REF_CODES]
                     ref_codes_str = "".join(f"<|speech_{c}|>" for c in ref_codes)
-                    combined = ref_phones.strip() + " " + clean_ipa_words.strip()
+                    combined = ref_phones.strip() + " " + ipa_words.strip()
                     chat = f"{TOKEN_TEXT_START}{combined}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}{ref_codes_str}"
 
                 eval_samples.append({"chat": chat, "text": txt})
