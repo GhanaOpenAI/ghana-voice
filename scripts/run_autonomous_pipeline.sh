@@ -126,13 +126,13 @@ for lang in "${FEMALE_LANGS[@]}"; do
     echo "  Log : $LANG_LOG"
     echo "------------------------------------------------------------"
 
-    # Uses the ghana-voice-trainer CLI toolkit
+    # Uses the ghana-voice-trainer CLI toolkit with online ASR CER evaluation
     ghana-voice-trainer train \
         --data-dir "$LANG_DATA" \
         --output-dir "$STAGE2_OUT" \
         --run-name "vieneu-female-$lang" \
         --base-model "$BASE_MODEL_ID" \
-        --epochs 25 \
+        --epochs 50 \
         --learning-rate 5e-5 \
         --batch-size 8 \
         --grad-accum 4 \
@@ -140,7 +140,8 @@ for lang in "${FEMALE_LANGS[@]}"; do
         --eval-steps 100 \
         --save-steps 100 \
         --logging-steps 20 \
-        --early-stopping-patience 4 \
+        --early-stopping-patience 5 \
+        --eval-cer \
         > "$LANG_LOG" 2>&1
 
     echo "[Stage 2] $lang training completed. Merging adapter with ghana-voice-trainer ..."

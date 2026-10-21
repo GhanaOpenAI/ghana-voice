@@ -13,12 +13,21 @@ import argparse
 import json
 import os
 import random
+import re
 import string
 import torch
 from torch.utils.data import Dataset, Subset
+from transformers import TrainerCallback
 
 from .constants import (
     DEFAULT_BASE_MODEL,
+    NEUCODEC_REPO,
+    SAMPLE_RATE_16K,
+    SAMPLE_RATE_24K,
+    DEFAULT_TEMPERATURE,
+    DEFAULT_TOP_P,
+    DEFAULT_TOP_K,
+    DEFAULT_REPETITION_PENALTY,
     MAX_REF_CODES,
     TOKEN_TEXT_START,
     TOKEN_TEXT_END,
@@ -27,6 +36,111 @@ from .constants import (
     PUNCT_SET,
 )
 from .phonemize import clean_reference_phones
+
+_ASR_MODEL_DEFAULT = (
+    "/mnt/volume_d2wey28/models/sherpa/"
+    "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-2026-02-05/model.onnx"
+)
+_ASR_TOKENS_DEFAULT = (
+    "/mnt/volume_d2wey28/models/sherpa/"
+    "sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-2026-02-05/tokens.txt"
+)
+
+
+class CEREvalCallback(TrainerCallback):
+    """
+    Online ASR CER evaluation callback.
+    Synthesizes held-out evaluation sentences, transcribes with sherpa-onnx
+    OmniASR 300M CTC, and reports `eval_cer` directly into Trainer metrics.
+    """
+    def __init__(self, eval_samples, tokenizer, asr_model, asr_tokens, codec):
+        self.eval_samples = eval_samples
+        self.tokenizer = tokenizer
+        self.asr_model = asr_model
+        self.asr_tokens = asr_tokens
+        self.codec = codec
+        self.rec = None
+        self.speech_end_id = tokenizer.convert_tokens_to_ids(TOKEN_SPEECH_END)
+
+    def _init_rec(self):
+        if self.rec is None and os.path.exists(self.asr_model):
+            try:
+                import sherpa_onnx
+                self.rec = sherpa_onnx.OfflineRecognizer.from_omnilingual_asr_ctc(
+                    model=self.asr_model,
+                    tokens=self.asr_tokens,
+                    num_threads=2,
+                    decoding_method="greedy_search",
+                )
+            except Exception as e:
+                print(f"Notice: Could not initialize sherpa-onnx ({e}). Falling back to loss-only eval.")
+
+    def on_evaluate(self, args, state, control, model=None, metrics=None, **kwargs):
+        if metrics is None or model is None:
+            return
+        self._init_rec()
+        if self.rec is None:
+            return
+
+        import jiwer
+        import torchaudio
+
+        device = next(model.parameters()).device
+        was_training = model.training
+        model.eval()
+
+        cers = []
+        sample_logs = []
+
+        with torch.no_grad():
+            for item in self.eval_samples[:5]:
+                chat = item["chat"]
+                text = item["text"]
+                inp = torch.tensor([self.tokenizer.encode(chat)], device=device)
+
+                out = model.generate(
+                    inp,
+                    eos_token_id=self.speech_end_id,
+                    max_new_tokens=220,
+                    do_sample=True,
+                    temperature=DEFAULT_TEMPERATURE,
+                    top_p=DEFAULT_TOP_P,
+                    top_k=DEFAULT_TOP_K,
+                    repetition_penalty=DEFAULT_REPETITION_PENALTY,
+                    use_cache=True,
+                )
+                gen_ids = out[0, inp.shape[1]:].cpu().tolist()
+                gen_str = self.tokenizer.decode(gen_ids, add_special_tokens=False)
+                sp_ids = [int(n) for n in re.findall(r"<\|speech_(\d+)\|>", gen_str)]
+                if not sp_ids:
+                    cers.append(1.0)
+                    continue
+
+                sp_t = torch.tensor(sp_ids, device=device).unsqueeze(0).unsqueeze(0)
+                wav_24k = self.codec.decode_code(sp_t).squeeze().cpu().float()
+                wav_16k = torchaudio.functional.resample(wav_24k, SAMPLE_RATE_24K, SAMPLE_RATE_16K).numpy()
+
+                st = self.rec.create_stream()
+                st.accept_waveform(SAMPLE_RATE_16K, wav_16k)
+                self.rec.decode_stream(st)
+                hyp = st.result.text.strip()
+
+                ref_c = re.sub(r"[^\w\s]", "", text).lower().strip()
+                hyp_c = re.sub(r"[^\w\s]", "", hyp).lower().strip()
+                cer = jiwer.cer(ref_c, hyp_c) if hyp_c else 1.0
+                cers.append(cer)
+                sample_logs.append((text[:40], hyp[:40], cer))
+
+        if was_training:
+            model.train()
+
+        mean_cer = sum(cers) / len(cers) if cers else 1.0
+        metrics["eval_cer"] = mean_cer
+
+        print(f"\n>>> [ASR Eval @ Step {state.global_step}] Mean CER: {mean_cer:.2%} (Loss: {metrics.get('eval_loss', 0):.4f}) <<<", flush=True)
+        for t, h, c in sample_logs[:2]:
+            print(f"    REF: {t}...\n    ASR: {h}... (CER: {c:.2%})", flush=True)
+        print("", flush=True)
 
 
 class TTSDataset(Dataset):
@@ -117,12 +231,13 @@ def build_dynamic_collator(pad_token_id: int):
 
 def train(data_dir: str, output_dir: str, run_name: str,
           base_model: str = DEFAULT_BASE_MODEL,
-          epochs: int = 20, learning_rate: float = 5e-5,
+          epochs: int = 50, learning_rate: float = 5e-5,
           batch_size: int = 8, grad_accum: int = 4,
-          eval_fraction: float = 0.05, early_stopping_patience: int = 4,
+          eval_fraction: float = 0.05, early_stopping_patience: int = 5,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
           lora_r: int = 16, lora_alpha: int = 32, lora_dropout: float = 0.05,
-          max_len: int = 4096, seed: int = 42):
+          max_len: int = 4096, seed: int = 42,
+          eval_cer: bool = True, asr_model: str = _ASR_MODEL_DEFAULT, asr_tokens: str = _ASR_TOKENS_DEFAULT):
 
     from transformers import (
         AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
@@ -208,6 +323,10 @@ def train(data_dir: str, output_dir: str, run_name: str,
     total_steps = steps_per_epoch * epochs
     warmup_steps = max(1, int(total_steps * 0.03))
 
+    has_asr = os.path.exists(asr_model) and os.path.exists(asr_tokens)
+    metric_best = "eval_cer" if (eval_cer and has_asr) else "eval_loss"
+    print(f"Optimization metric for best model & early stopping: {metric_best}")
+
     training_args = TrainingArguments(
         output_dir=run_dir,
         do_train=True,
@@ -226,7 +345,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
         save_strategy="steps",
         save_total_limit=3,
         load_best_model_at_end=eval_ds is not None,
-        metric_for_best_model="eval_loss",
+        metric_for_best_model=metric_best,
         greater_is_better=False,
         report_to="none",
         dataloader_num_workers=4,
@@ -236,6 +355,26 @@ def train(data_dir: str, output_dir: str, run_name: str,
 
     callbacks = []
     if eval_ds is not None:
+        if eval_cer and has_asr:
+            from neucodec import NeuCodec
+            codec = NeuCodec.from_pretrained(NEUCODEC_REPO).to("cuda" if torch.cuda.is_available() else "cpu").eval()
+
+            # Prepare 5 held-out items for ASR synthesis CER scoring
+            eval_samples = []
+            for idx in sorted(eval_indices):
+                s = full_dataset.samples[idx]
+                cands = [j for j in full_dataset._ref_indices if j != idx]
+                if not cands:
+                    cands = [j for j in range(len(full_dataset.samples)) if j != idx]
+                ref = full_dataset.samples[random.choice(cands)]
+                chat = full_dataset._render(s, ref)
+                eval_samples.append({"chat": chat, "text": s["text"]})
+                if len(eval_samples) >= 5:
+                    break
+
+            callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
+            print(f"Registered online ASR CER evaluator ({len(eval_samples)} validation sentences).")
+
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
 
     trainer = Trainer(
@@ -251,7 +390,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
     trainer.train()
 
     final_path = os.path.join(run_dir, "final")
-    print(f"Saving LoRA adapter -> {final_path}")
+    print(f"Saving best model LoRA adapter (tracked by {metric_best}) -> {final_path}")
     model.save_pretrained(final_path)
     tokenizer.save_pretrained(final_path)
     print("Training completed successfully.")
@@ -263,15 +402,19 @@ def main():
     ap.add_argument("--output-dir", default="output")
     ap.add_argument("--run-name", required=True)
     ap.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
-    ap.add_argument("--epochs", type=int, default=20)
+    ap.add_argument("--epochs", type=int, default=50)
     ap.add_argument("--learning-rate", type=float, default=5e-5)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--grad-accum", type=int, default=4)
     ap.add_argument("--eval-fraction", type=float, default=0.05)
-    ap.add_argument("--early-stopping-patience", type=int, default=4)
+    ap.add_argument("--early-stopping-patience", type=int, default=5)
     ap.add_argument("--eval-steps", type=int, default=100)
     ap.add_argument("--save-steps", type=int, default=100)
     ap.add_argument("--logging-steps", type=int, default=20)
+    ap.add_argument("--eval-cer", action="store_true", default=True,
+                    help="Evaluate ASR CER directly during training and select best checkpoint on CER")
+    ap.add_argument("--asr-model", default=_ASR_MODEL_DEFAULT)
+    ap.add_argument("--asr-tokens", default=_ASR_TOKENS_DEFAULT)
     ap.add_argument("--lora-r", type=int, default=16)
     ap.add_argument("--lora-alpha", type=int, default=32)
     ap.add_argument("--lora-dropout", type=float, default=0.05)
@@ -293,6 +436,9 @@ def main():
         eval_steps=args.eval_steps,
         save_steps=args.save_steps,
         logging_steps=args.logging_steps,
+        eval_cer=args.eval_cer,
+        asr_model=args.asr_model,
+        asr_tokens=args.asr_tokens,
         lora_r=args.lora_r,
         lora_alpha=args.lora_alpha,
         lora_dropout=args.lora_dropout,

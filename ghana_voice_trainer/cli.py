@@ -103,12 +103,13 @@ def main():
     sub_train.add_argument("--output-dir", default="output")
     sub_train.add_argument("--run-name", required=True)
     sub_train.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
-    sub_train.add_argument("--epochs", type=int, default=20)
+    sub_train.add_argument("--epochs", type=int, default=50)
     sub_train.add_argument("--learning-rate", type=float, default=5e-5)
     sub_train.add_argument("--batch-size", type=int, default=8)
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)
-    sub_train.add_argument("--early-stopping-patience", type=int, default=4)
+    sub_train.add_argument("--early-stopping-patience", type=int, default=5)
+    sub_train.add_argument("--eval-cer", action="store_true", default=True)
 
     # Command: merge
     sub_merge = subparsers.add_parser("merge", help="Merge LoRA adapter into base model")
@@ -186,6 +187,7 @@ def main():
             grad_accum=args.grad_accum,
             eval_fraction=args.eval_fraction,
             early_stopping_patience=args.early_stopping_patience,
+            eval_cer=getattr(args, "eval_cer", True),
         )
     elif args.command == "merge":
         from .merge import merge_lora
