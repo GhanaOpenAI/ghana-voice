@@ -84,6 +84,7 @@ class CEREvalCallback(TrainerCallback):
 
         import jiwer
         import torchaudio
+        import numpy as np
 
         device = next(model.parameters()).device
         was_training = model.training
@@ -93,37 +94,55 @@ class CEREvalCallback(TrainerCallback):
         sample_logs = []
 
         with torch.no_grad():
-            for item in self.eval_samples[:5]:
+            for item in self.eval_samples:
                 chat = item["chat"]
                 text = item["text"]
                 inp = torch.tensor([self.tokenizer.encode(chat)], device=device)
 
-                out = model.generate(
-                    inp,
-                    eos_token_id=self.speech_end_id,
-                    max_new_tokens=220,
-                    do_sample=True,
-                    temperature=DEFAULT_TEMPERATURE,
-                    top_p=DEFAULT_TOP_P,
-                    top_k=DEFAULT_TOP_K,
-                    repetition_penalty=DEFAULT_REPETITION_PENALTY,
-                    use_cache=True,
-                )
-                gen_ids = out[0, inp.shape[1]:].cpu().tolist()
-                gen_str = self.tokenizer.decode(gen_ids, add_special_tokens=False)
-                sp_ids = [int(n) for n in re.findall(r"<\|speech_(\d+)\|>", gen_str)]
-                if not sp_ids:
+                try:
+                    out = model.generate(
+                        inp,
+                        eos_token_id=self.speech_end_id,
+                        max_new_tokens=220,
+                        do_sample=True,
+                        temperature=DEFAULT_TEMPERATURE,
+                        top_p=DEFAULT_TOP_P,
+                        top_k=DEFAULT_TOP_K,
+                        repetition_penalty=DEFAULT_REPETITION_PENALTY,
+                        use_cache=True,
+                    )
+                    gen_ids = out[0, inp.shape[1]:].cpu().tolist()
+                    gen_str = self.tokenizer.decode(gen_ids, add_special_tokens=False)
+                    sp_ids = [int(n) for n in re.findall(r"<\|speech_(\d+)\|>", gen_str)]
+                except Exception:
+                    sp_ids = []
+
+                if len(sp_ids) < 15:
                     cers.append(1.0)
                     continue
 
-                sp_t = torch.tensor(sp_ids, device=device).unsqueeze(0).unsqueeze(0)
-                wav_24k = self.codec.decode_code(sp_t).squeeze().cpu().float()
-                wav_16k = torchaudio.functional.resample(wav_24k, SAMPLE_RATE_24K, SAMPLE_RATE_16K).numpy()
+                try:
+                    sp_t = torch.tensor(sp_ids, device=device).unsqueeze(0).unsqueeze(0)
+                    wav_24k = self.codec.decode_code(sp_t)
+                    if wav_24k.numel() < 4800:
+                        cers.append(1.0)
+                        continue
+                    wav_24k = wav_24k.squeeze().cpu().float()
+                    if wav_24k.ndim != 1 or len(wav_24k) < 4800:
+                        cers.append(1.0)
+                        continue
 
-                st = self.rec.create_stream()
-                st.accept_waveform(SAMPLE_RATE_16K, wav_16k)
-                self.rec.decode_stream(st)
-                hyp = st.result.text.strip()
+                    wav_16k = torchaudio.functional.resample(wav_24k, SAMPLE_RATE_24K, SAMPLE_RATE_16K).numpy()
+                    if len(wav_16k) < 3200:
+                        cers.append(1.0)
+                        continue
+
+                    st = self.rec.create_stream()
+                    st.accept_waveform(SAMPLE_RATE_16K, np.asarray(wav_16k, dtype=np.float32))
+                    self.rec.decode_stream(st)
+                    hyp = (st.result.text or "").strip()
+                except Exception as exc:
+                    hyp = ""
 
                 ref_c = re.sub(r"[^\w\s]", "", text).lower().strip()
                 hyp_c = re.sub(r"[^\w\s]", "", hyp).lower().strip()
@@ -359,21 +378,76 @@ def train(data_dir: str, output_dir: str, run_name: str,
             from neucodec import NeuCodec
             codec = NeuCodec.from_pretrained(NEUCODEC_REPO).to("cuda" if torch.cuda.is_available() else "cpu").eval()
 
-            # Prepare 5 held-out items for ASR synthesis CER scoring
+            from .phonemize import phonemize_text
+
+            CANONICAL_TESTS = {
+                "twi": [
+                    "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
+                    "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
+                    "Wo ho te sɛn? Me ho yɛ, medaase pa ara.",
+                ],
+                "fat": [
+                    "Nyame yɛ kɛse na ɔwɔ tumi nyinaa.",
+                    "Me ma wo akye, wo ho te dɛn ndɛ?",
+                ],
+                "gaa": [
+                    "Nyɔŋmɔ ji mi nɔkwɛlɔ, nɔ ko nɔ ko ehiaŋ mi.",
+                    "Te oyoo tɛŋŋ? Miye jogbaŋŋ, oyiwaladɔŋŋ.",
+                ],
+                "ada": [
+                    "Mawu ji nɔkwɛlɔ kpakpa nɔ ko be ni maa hia mi.",
+                ],
+                "ewe": [
+                    "Yehowa nye nye kplɔla, naneke mehiãam o.",
+                    "Ndi na wò, èfɔ nyuiea? Mefɔ nyuie, akpe.",
+                ],
+                "dag": [
+                    "Naawuni n-nyɛ n gubi, shɛli bi kpaŋsi ma.",
+                    "Dasiba, a biem be wula? N biem nyɛla viɛnyɛla.",
+                ],
+                "eng": [
+                    "Welcome to Ghana, the gateway to Africa.",
+                    "Good morning, how are you doing today?",
+                ],
+            }
+
+            # Detect language code
+            first_fn = full_dataset.samples[0]["filename"]
+            detected_lang = first_fn.split("_")[0]
+            if "twi" in run_name or "twi" in data_dir:
+                detected_lang = "twi"
+            elif "ga" in run_name or "ga" in data_dir:
+                detected_lang = "gaa"
+            elif "ewe" in run_name or "ewe" in data_dir:
+                detected_lang = "ewe"
+            elif "fat" in run_name or "fante" in data_dir:
+                detected_lang = "fat"
+            elif "dag" in run_name or "dag" in data_dir:
+                detected_lang = "dag"
+            elif "ada" in run_name or "dangme" in data_dir:
+                detected_lang = "ada"
+            elif "eng" in run_name or "english" in data_dir:
+                detected_lang = "eng"
+
+            test_texts = CANONICAL_TESTS.get(detected_lang, [
+                "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
+                "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
+            ])
+
             eval_samples = []
-            for idx in sorted(eval_indices):
-                s = full_dataset.samples[idx]
-                cands = [j for j in full_dataset._ref_indices if j != idx]
-                if not cands:
-                    cands = [j for j in range(len(full_dataset.samples)) if j != idx]
-                ref = full_dataset.samples[random.choice(cands)]
-                chat = full_dataset._render(s, ref)
-                eval_samples.append({"chat": chat, "text": s["text"]})
-                if len(eval_samples) >= 5:
-                    break
+            ref_cand = full_dataset.samples[full_dataset._ref_indices[0]]
+            ref_phones = clean_reference_phones(ref_cand["phones"])
+            ref_codes = ref_cand["codes"][:MAX_REF_CODES]
+            ref_codes_str = "".join(f"<|speech_{c}|>" for c in ref_codes)
+
+            for txt in test_texts:
+                target_phones = phonemize_text(txt, detected_lang)
+                combined = ref_phones.strip() + " " + target_phones.strip()
+                chat = f"{TOKEN_TEXT_START}{combined}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}{ref_codes_str}"
+                eval_samples.append({"chat": chat, "text": txt})
 
             callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
-            print(f"Registered online ASR CER evaluator ({len(eval_samples)} validation sentences).")
+            print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences).")
 
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
 
