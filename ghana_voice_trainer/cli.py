@@ -100,6 +100,7 @@ def main():
     # Command: train
     sub_train = subparsers.add_parser("train", help="Run LoRA finetuning")
     sub_train.add_argument("--data-dir", required=True)
+    sub_train.add_argument("--metadata", default="metadata_encoded.csv")
     sub_train.add_argument("--output-dir", default="output")
     sub_train.add_argument("--run-name", required=True)
     sub_train.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
@@ -108,10 +109,11 @@ def main():
     sub_train.add_argument("--batch-size", type=int, default=8)
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)
-    sub_train.add_argument("--early-stopping-patience", type=int, default=5)
+    sub_train.add_argument("--early-stopping-patience", type=int, default=10)
     sub_train.add_argument("--eval-steps", type=int, default=100)
     sub_train.add_argument("--save-steps", type=int, default=100)
     sub_train.add_argument("--logging-steps", type=int, default=20)
+    sub_train.add_argument("--no-ref", action="store_true", default=True, help="Train zero-ref direct TTS without reference audio")
     sub_train.add_argument("--eval-cer", action="store_true", default=True)
 
     # Command: merge
@@ -184,6 +186,8 @@ def main():
             output_dir=args.output_dir,
             run_name=args.run_name,
             base_model=args.base_model,
+            metadata_file=getattr(args, "metadata", "metadata_encoded.csv"),
+            no_ref=getattr(args, "no_ref", True),
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,

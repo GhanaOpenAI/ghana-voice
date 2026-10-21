@@ -164,13 +164,16 @@ class CEREvalCallback(TrainerCallback):
 
 class TTSDataset(Dataset):
     """
-    Dataset of in-context voice-cloning pairs:
-      <|TEXT_PROMPT_START|>{ref_phones} {target_phones}<|TEXT_PROMPT_END|>
-      <|SPEECH_GENERATION_START|>{ref_codes}{target_codes}<|SPEECH_GENERATION_END|>
+    Dataset for Neu-TTS training.
+    Supports both:
+    1. Zero-ref mode (no_ref=True): direct text-to-speech mapping without reference audio.
+       <|TEXT_PROMPT_START|>{ipa_phones}<|TEXT_PROMPT_END|><|SPEECH_GENERATION_START|>{target_codes}<|SPEECH_GENERATION_END|>
+    2. In-context mode (no_ref=False): voice-cloning pairing.
     """
-    def __init__(self, metadata_path: str, tokenizer, max_len: int = 4096):
+    def __init__(self, metadata_path: str, tokenizer, max_len: int = 4096, no_ref: bool = True):
         self.tokenizer = tokenizer
         self.max_len = max_len
+        self.no_ref = no_ref
         self.samples = []
 
         with open(metadata_path, "r", encoding="utf-8") as f:
@@ -185,28 +188,32 @@ class TTSDataset(Dataset):
                     })
 
         before = len(self.samples)
-        # Filter samples that exceed max_len tokens when paired with self
+        # Filter samples that exceed max_len tokens
         self.samples = [
             s for s in self.samples
-            if len(self.tokenizer.encode(self._render(s, s))) <= max_len
+            if len(self.tokenizer.encode(self._render(s))) <= max_len
         ]
-        print(f"Length filter: kept {len(self.samples)}/{before} within {max_len} tokens.")
+        print(f"Length filter: kept {len(self.samples)}/{before} within {max_len} tokens (no_ref={no_ref}).")
 
-        # Reference-eligible pool: 2.0 - 6.0 seconds (100 - 300 codes)
+        # Reference-eligible pool (for when in-context mode is enabled)
         self._ref_indices = [
             i for i, s in enumerate(self.samples)
             if 100 <= len(s["codes"]) <= 350
         ]
         if not self._ref_indices:
             self._ref_indices = list(range(len(self.samples)))
-        print(f"Reference pool: {len(self._ref_indices)} eligible reference samples.")
 
-    def _render(self, target, ref):
+    def _render(self, target, ref=None):
+        tgt_str = "".join(f"<|speech_{c}|>" for c in target["codes"])
+        if self.no_ref or ref is None:
+            return (
+                f"{TOKEN_TEXT_START}{target['phones'].strip()}{TOKEN_TEXT_END}"
+                f"{TOKEN_SPEECH_START}{tgt_str}{TOKEN_SPEECH_END}"
+            )
         ref_codes = ref["codes"][:MAX_REF_CODES]
         ref_phones = clean_reference_phones(ref["phones"])
         combined = ref_phones.strip() + " " + target["phones"].strip()
         ref_str = "".join(f"<|speech_{c}|>" for c in ref_codes)
-        tgt_str = "".join(f"<|speech_{c}|>" for c in target["codes"])
         return (
             f"{TOKEN_TEXT_START}{combined}{TOKEN_TEXT_END}"
             f"{TOKEN_SPEECH_START}{ref_str}{tgt_str}{TOKEN_SPEECH_END}"
@@ -217,12 +224,15 @@ class TTSDataset(Dataset):
 
     def __getitem__(self, idx):
         target = self.samples[idx]
-        candidates = [i for i in self._ref_indices if i != idx]
-        if not candidates:
-            candidates = [i for i in range(len(self.samples)) if i != idx]
-        ref = self.samples[random.choice(candidates)]
+        if self.no_ref:
+            chat = self._render(target)
+        else:
+            candidates = [i for i in self._ref_indices if i != idx]
+            if not candidates:
+                candidates = [i for i in range(len(self.samples)) if i != idx]
+            ref = self.samples[random.choice(candidates)]
+            chat = self._render(target, ref)
 
-        chat = self._render(target, ref)
         ids = self.tokenizer.encode(chat)
         input_ids = torch.tensor(ids, dtype=torch.long)
         labels = torch.full_like(input_ids, -100)
@@ -250,9 +260,11 @@ def build_dynamic_collator(pad_token_id: int):
 
 def train(data_dir: str, output_dir: str, run_name: str,
           base_model: str = DEFAULT_BASE_MODEL,
+          metadata_file: str = "metadata_encoded.csv",
+          no_ref: bool = True,
           epochs: int = 50, learning_rate: float = 5e-5,
           batch_size: int = 8, grad_accum: int = 4,
-          eval_fraction: float = 0.05, early_stopping_patience: int = 5,
+          eval_fraction: float = 0.05, early_stopping_patience: int = 10,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
           lora_r: int = 16, lora_alpha: int = 32, lora_dropout: float = 0.05,
           max_len: int = 4096, seed: int = 42,
@@ -266,7 +278,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
     random.seed(seed)
     torch.manual_seed(seed)
 
-    data_csv = os.path.join(data_dir, "metadata_encoded.csv")
+    data_csv = os.path.join(data_dir, metadata_file)
     if not os.path.exists(data_csv):
         raise FileNotFoundError(f"{data_csv} not found. Run prep & encode first.")
 
@@ -278,7 +290,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
 
-    full_dataset = TTSDataset(data_csv, tokenizer, max_len=max_len)
+    full_dataset = TTSDataset(data_csv, tokenizer, max_len=max_len, no_ref=no_ref)
 
     # Train / eval split
     n_eval = max(1, int(len(full_dataset.samples) * eval_fraction))
@@ -294,6 +306,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
         def __init__(self, parent, idxs):
             self.tokenizer = parent.tokenizer
             self.max_len = parent.max_len
+            self.no_ref = parent.no_ref
             self.samples = parent.samples
             self._ref_indices = parent._ref_indices
             self._eval_idxs = idxs
@@ -305,12 +318,15 @@ def train(data_dir: str, output_dir: str, run_name: str,
         def __getitem__(self, i):
             real_idx = self._eval_idxs[i]
             target = self.samples[real_idx]
-            candidates = [j for j in self._ref_indices if j != real_idx]
-            if not candidates:
-                candidates = [j for j in range(len(self.samples)) if j != real_idx]
-            ref = self.samples[self._rng.choice(candidates)]
+            if self.no_ref:
+                chat = self._render(target)
+            else:
+                candidates = [j for j in self._ref_indices if j != real_idx]
+                if not candidates:
+                    candidates = [j for j in range(len(self.samples)) if j != real_idx]
+                ref = self.samples[self._rng.choice(candidates)]
+                chat = self._render(target, ref)
 
-            chat = self._render(target, ref)
             ids = self.tokenizer.encode(chat)
             input_ids = torch.tensor(ids, dtype=torch.long)
             labels = torch.full_like(input_ids, -100)
@@ -435,19 +451,29 @@ def train(data_dir: str, output_dir: str, run_name: str,
             ])
 
             eval_samples = []
-            ref_cand = full_dataset.samples[full_dataset._ref_indices[0]]
-            ref_phones = clean_reference_phones(ref_cand["phones"])
-            ref_codes = ref_cand["codes"][:MAX_REF_CODES]
-            ref_codes_str = "".join(f"<|speech_{c}|>" for c in ref_codes)
+            from africa_g2p import AfricaPipeline
+            pipe = AfricaPipeline(lang=detected_lang, output="ipa")
 
             for txt in test_texts:
-                target_phones = phonemize_text(txt, detected_lang)
-                combined = ref_phones.strip() + " " + target_phones.strip()
-                chat = f"{TOKEN_TEXT_START}{combined}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}{ref_codes_str}"
+                # Word-separated IPA (sep=""): NO space between characters within word, single space between words
+                raw_ipa = pipe.run(txt.strip(), sep="")
+                w_list = ["".join(ch for ch in w if ch not in PUNCT_SET) for w in raw_ipa.split()]
+                clean_ipa_words = " ".join(w for w in w_list if w)
+
+                if no_ref:
+                    chat = f"{TOKEN_TEXT_START}{clean_ipa_words.strip()}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}"
+                else:
+                    ref_cand = full_dataset.samples[full_dataset._ref_indices[0]]
+                    ref_phones = clean_reference_phones(ref_cand["phones"])
+                    ref_codes = ref_cand["codes"][:MAX_REF_CODES]
+                    ref_codes_str = "".join(f"<|speech_{c}|>" for c in ref_codes)
+                    combined = ref_phones.strip() + " " + clean_ipa_words.strip()
+                    chat = f"{TOKEN_TEXT_START}{combined}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}{ref_codes_str}"
+
                 eval_samples.append({"chat": chat, "text": txt})
 
             callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
-            print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences).")
+            print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences, no_ref={no_ref}).")
 
         callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
 
