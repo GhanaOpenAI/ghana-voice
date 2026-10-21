@@ -259,10 +259,11 @@ def build_dynamic_collator(pad_token_id: int):
 
 
 def train(data_dir: str, output_dir: str, run_name: str,
-          base_model: str = DEFAULT_BASE_MODEL,
+          base_model: str = "pnnbao-ump/VieNeu-TTS-0.3B",
           metadata_file: str = "metadata_encoded.csv",
           no_ref: bool = True,
-          epochs: int = 50, learning_rate: float = 5e-5,
+          full_sft: bool = False,
+          epochs: int = 50, learning_rate: float = 3e-5,
           batch_size: int = 8, grad_accum: int = 4,
           eval_fraction: float = 0.05, early_stopping_patience: int = 10,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
@@ -343,16 +344,24 @@ def train(data_dir: str, output_dir: str, run_name: str,
         base_model, torch_dtype=torch.bfloat16, device_map="auto", trust_remote_code=True
     )
 
-    lora_config = LoraConfig(
-        r=lora_r,
-        lora_alpha=lora_alpha,
-        target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
-        lora_dropout=lora_dropout,
-        bias="none",
-        task_type=TaskType.CAUSAL_LM,
-    )
-    model = get_peft_model(model, lora_config)
-    model.print_trainable_parameters()
+    if full_sft:
+        print("Training mode: Full Parameter SFT (100% of model parameters trainable).")
+        for p in model.parameters():
+            p.requires_grad = True
+        n_trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+        print(f"Trainable parameters for Full SFT: {n_trainable:,} (100%)")
+    else:
+        print("Training mode: LoRA adaptation.")
+        lora_config = LoraConfig(
+            r=lora_r,
+            lora_alpha=lora_alpha,
+            target_modules=["q_proj", "k_proj", "v_proj", "o_proj", "gate_proj", "up_proj", "down_proj"],
+            lora_dropout=lora_dropout,
+            bias="none",
+            task_type=TaskType.CAUSAL_LM,
+        )
+        model = get_peft_model(model, lora_config)
+        model.print_trainable_parameters()
 
     steps_per_epoch = max(1, len(train_ds) // (batch_size * grad_accum))
     total_steps = steps_per_epoch * epochs
@@ -506,17 +515,22 @@ def train(data_dir: str, output_dir: str, run_name: str,
 
 
 def main():
-    ap = argparse.ArgumentParser(description="LoRA Finetuning for Neu-TTS Ghanaian models")
+    ap = argparse.ArgumentParser(description="Finetuning for Neu-TTS Ghanaian models")
     ap.add_argument("--data-dir", required=True)
+    ap.add_argument("--metadata", default="metadata_encoded.csv")
     ap.add_argument("--output-dir", default="output")
     ap.add_argument("--run-name", required=True)
-    ap.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
+    ap.add_argument("--base-model", default="pnnbao-ump/VieNeu-TTS-0.3B")
+    ap.add_argument("--full-sft", action="store_true", default=False,
+                    help="Full parameter SFT (100% of weights trainable, no LoRA)")
+    ap.add_argument("--no-ref", action="store_true", default=True,
+                    help="Direct zero-ref text-to-speech training without reference audio")
     ap.add_argument("--epochs", type=int, default=50)
-    ap.add_argument("--learning-rate", type=float, default=5e-5)
+    ap.add_argument("--learning-rate", type=float, default=3e-5)
     ap.add_argument("--batch-size", type=int, default=8)
     ap.add_argument("--grad-accum", type=int, default=4)
     ap.add_argument("--eval-fraction", type=float, default=0.05)
-    ap.add_argument("--early-stopping-patience", type=int, default=5)
+    ap.add_argument("--early-stopping-patience", type=int, default=10)
     ap.add_argument("--eval-steps", type=int, default=100)
     ap.add_argument("--save-steps", type=int, default=100)
     ap.add_argument("--logging-steps", type=int, default=20)
@@ -533,9 +547,12 @@ def main():
 
     train(
         data_dir=args.data_dir,
+        metadata_file=args.metadata,
         output_dir=args.output_dir,
         run_name=args.run_name,
         base_model=args.base_model,
+        full_sft=args.full_sft,
+        no_ref=args.no_ref,
         epochs=args.epochs,
         learning_rate=args.learning_rate,
         batch_size=args.batch_size,

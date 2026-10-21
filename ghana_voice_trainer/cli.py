@@ -98,14 +98,15 @@ def main():
     sub_enc.add_argument("--batch-size", type=int, default=16)
 
     # Command: train
-    sub_train = subparsers.add_parser("train", help="Run LoRA finetuning")
+    sub_train = subparsers.add_parser("train", help="Run finetuning (Full SFT or LoRA)")
     sub_train.add_argument("--data-dir", required=True)
     sub_train.add_argument("--metadata", default="metadata_encoded.csv")
     sub_train.add_argument("--output-dir", default="output")
     sub_train.add_argument("--run-name", required=True)
-    sub_train.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
+    sub_train.add_argument("--base-model", default="pnnbao-ump/VieNeu-TTS-0.3B")
+    sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100% of parameters (Full SFT, no LoRA)")
     sub_train.add_argument("--epochs", type=int, default=50)
-    sub_train.add_argument("--learning-rate", type=float, default=5e-5)
+    sub_train.add_argument("--learning-rate", type=float, default=3e-5)
     sub_train.add_argument("--batch-size", type=int, default=8)
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)
@@ -188,6 +189,7 @@ def main():
             base_model=args.base_model,
             metadata_file=getattr(args, "metadata", "metadata_encoded.csv"),
             no_ref=getattr(args, "no_ref", True),
+            full_sft=getattr(args, "full_sft", False),
             epochs=args.epochs,
             learning_rate=args.learning_rate,
             batch_size=args.batch_size,
