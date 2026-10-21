@@ -109,6 +109,9 @@ def main():
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)
     sub_train.add_argument("--early-stopping-patience", type=int, default=5)
+    sub_train.add_argument("--eval-steps", type=int, default=100)
+    sub_train.add_argument("--save-steps", type=int, default=100)
+    sub_train.add_argument("--logging-steps", type=int, default=20)
     sub_train.add_argument("--eval-cer", action="store_true", default=True)
 
     # Command: merge
@@ -187,6 +190,9 @@ def main():
             grad_accum=args.grad_accum,
             eval_fraction=args.eval_fraction,
             early_stopping_patience=args.early_stopping_patience,
+            eval_steps=getattr(args, "eval_steps", 100),
+            save_steps=getattr(args, "save_steps", 100),
+            logging_steps=getattr(args, "logging_steps", 20),
             eval_cer=getattr(args, "eval_cer", True),
         )
     elif args.command == "merge":
