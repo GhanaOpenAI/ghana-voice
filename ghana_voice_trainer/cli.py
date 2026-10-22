@@ -104,7 +104,7 @@ def main():
     sub_train.add_argument("--output-dir", default="output")
     sub_train.add_argument("--run-name", required=True)
     sub_train.add_argument("--base-model", default="pnnbao-ump/VieNeu-TTS-0.3B")
-    sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100% of parameters (Full SFT, no LoRA)")
+    sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100%% of parameters (Full SFT, no LoRA)")
     sub_train.add_argument("--epochs", type=int, default=50)
     sub_train.add_argument("--learning-rate", type=float, default=3e-5)
     sub_train.add_argument("--batch-size", type=int, default=8)
