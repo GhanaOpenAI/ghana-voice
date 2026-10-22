@@ -10,6 +10,7 @@ from .constants import (
     TIER2_LANGUAGES,
     DEFAULT_BASE_MODEL,
 )
+from .vc import get_available_vc_voices
 
 
 def run_pipeline(args):
@@ -27,6 +28,10 @@ def run_pipeline(args):
     print("\n" + "=" * 60)
     print(f"GHANA VOICE: {lang_info['display'].upper()}")
     print(f"Tier {lang_info['tier']} Language (Recommended Audio: {lang_info['rec_hours']})")
+    if getattr(args, "vc_voice", None):
+        print(f"Voice Conversion Enabled -> Target Voice: {args.vc_voice}")
+    else:
+        print("Real Human Speech Mode (Zero Voice Conversion)")
     print("=" * 60)
 
     print("\n" + "=" * 60)
@@ -34,10 +39,10 @@ def run_pipeline(args):
     print("=" * 60)
     if args.hf_repo:
         prep_hf_dataset(args.hf_repo, args.subset, args.split, data_dir, args.lang,
-                        args.min_dur, args.max_dur, args.per_lang)
+                        args.min_dur, args.max_dur, args.per_lang, getattr(args, "vc_voice", None))
     elif args.input_dir:
         prep_local_folder(args.input_dir, args.metadata_file, data_dir, args.lang,
-                          args.min_dur, args.max_dur, args.per_lang)
+                          args.min_dur, args.max_dur, args.per_lang, getattr(args, "vc_voice", None))
     else:
         print("Data already prepared, skipping prep step.")
 
@@ -88,7 +93,7 @@ def print_languages_table(tier_filter=None):
     print("=" * 70)
     if tier_filter in (None, 1):
         print("\n🌟 TIER 1: Core Ghanaian Languages (Deeply tuned in Base Model)")
-        print("   Recommended fine-tuning data: 2 to 3 hours (~1,000–1,500 clips)")
+        print("   Recommended fine-tuning data: 5 to 10 hours (~3,000–6,000 clips)")
         print("-" * 70)
         print(f"   {'Identifier':16s} | {'Display Name':20s} | {'ISO':6s} | {'Family':12s}")
         print("-" * 70)
@@ -96,13 +101,28 @@ def print_languages_table(tier_filter=None):
             print(f"   {k:16s} | {v['display']:20s} | {v['iso']:6s} | {v['family']:12s}")
     if tier_filter in (None, 2):
         print("\n🌍 TIER 2: Extended Ghanaian & Regional African Languages + Ghanaian English")
-        print("   Recommended fine-tuning data: 3 to 6 hours (~1,000–3,000 clips)")
+        print("   Recommended fine-tuning data: 5 to 10 hours (~3,000–6,000 clips)")
         print("-" * 70)
         print(f"   {'Identifier':16s} | {'Display Name':20s} | {'ISO':6s} | {'Family':12s}")
         print("-" * 70)
         for k, v in TIER2_LANGUAGES.items():
             print(f"   {k:16s} | {v['display']:20s} | {v['iso']:6s} | {v['family']:12s}")
     print("=" * 70 + "\n")
+
+
+def print_vc_voices_table():
+    voices = get_available_vc_voices()
+    print("\n" + "=" * 75)
+    print("AFRICA FEMALE VC: AVAILABLE VOICES FOR VOICE CONVERSION")
+    print("=" * 75)
+    print(f"{'Voice ID':24s} | {'Origin':12s} | {'Pitch':8s} | {'Description'}")
+    print("-" * 75)
+    for k, v in sorted(voices.items()):
+        rec = v.get("recorded_in", "African")
+        p = f"{v.get('pitch_hz', 0)} Hz"
+        desc = v.get("description", "")
+        print(f"{k:24s} | {rec:12s} | {p:8s} | {desc}")
+    print("=" * 75 + "\n")
 
 
 def main():
@@ -138,11 +158,15 @@ def main():
     sub_gguf = subparsers.add_parser("export-gguf", help="Export PyTorch model to GGUF format and quantize for CPU")
     sub_gguf.add_argument("--model-dir", required=True, help="Directory containing PyTorch model weights")
     sub_gguf.add_argument("--out-dir", required=True, help="Output directory for GGUF files")
+    sub_gguf.add_argument("--name", default=None, help="Base name prefix for GGUFs (e.g. ghana-voice_twi)")
     sub_gguf.add_argument("--quant", nargs="+", default=["Q4_K_M", "Q8_0"], help="Quantization types")
 
     # Command: list-langs
     sub_langs = subparsers.add_parser("list-langs", help="List all supported languages, tiers, and data requirements")
     sub_langs.add_argument("--tier", type=int, choices=[1, 2], default=None, help="Filter by Tier 1 or Tier 2")
+
+    # Command: list-vc-voices
+    sub_vc = subparsers.add_parser("list-vc-voices", help="List all available African female target voices for voice conversion")
 
     # Command: prep
     sub_prep = subparsers.add_parser("prep", help="Prepare audio and phonemes")
@@ -156,6 +180,7 @@ def main():
     sub_prep.add_argument("--min-dur", type=float, default=2.0)
     sub_prep.add_argument("--max-dur", type=float, default=15.0)
     sub_prep.add_argument("--per-lang", type=int, default=0)
+    sub_prep.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
 
     # Command: encode
     sub_enc = subparsers.add_parser("encode", help="NeuCodec encode prepared audio")
@@ -230,6 +255,7 @@ def main():
     sub_run.add_argument("--min-dur", type=float, default=2.0)
     sub_run.add_argument("--max-dur", type=float, default=15.0)
     sub_run.add_argument("--per-lang", type=int, default=0)
+    sub_run.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
 
     args = parser.parse_args()
     if not args.command:
@@ -255,19 +281,21 @@ def main():
         start_server(host=args.host, port=args.port)
     elif args.command == "export-gguf":
         from .export import export_to_gguf
-        export_to_gguf(args.model_dir, args.out_dir, quant_types=args.quant)
+        export_to_gguf(args.model_dir, args.out_dir, name=args.name, quant_types=args.quant)
     elif args.command == "list-langs":
         print_languages_table(args.tier)
+    elif args.command == "list-vc-voices":
+        print_vc_voices_table()
     elif args.command == "prep":
         info = get_language_info(args.lang)
         print(f"\n[Language Info] {info['display']} | Tier {info['tier']} (Target data: {info['rec_hours']})")
         from .prep import prep_local_folder, prep_hf_dataset
         if args.hf_repo:
             prep_hf_dataset(args.hf_repo, args.subset, args.split, args.out_dir, args.lang,
-                            args.min_dur, args.max_dur, args.per_lang)
+                            args.min_dur, args.max_dur, args.per_lang, args.vc_voice)
         elif args.input_dir:
             prep_local_folder(args.input_dir, args.metadata_file, args.out_dir, args.lang,
-                              args.min_dur, args.max_dur, args.per_lang)
+                              args.min_dur, args.max_dur, args.per_lang, args.vc_voice)
     elif args.command == "encode":
         from .encode import encode_dataset
         encode_dataset(args.data_dir, args.metadata, args.output, args.batch_size)

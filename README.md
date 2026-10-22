@@ -1,38 +1,36 @@
 # Ghana Voice 🇬🇭🎙️
 
-**Ghana Voice** is a unified Python package and CLI toolkit for **inference, fine-tuning, and model management** of Ghanaian and African text-to-speech models built on [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) and [NeuCodec](https://huggingface.co/neuphonic/neucodec).
+**Ghana Voice** is a unified Python package and CLI toolkit for **inference, fine-tuning, voice conversion, and model management** of Ghanaian and African text-to-speech models built on [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) and [NeuCodec](https://huggingface.co/neuphonic/neucodec).
 
 ---
 
-## Foundation Base Model & Naming Convention
+## Foundation Models & Naming Convention
 
 - **Multilingual Base Model:** [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) (244M parameters, trained across 42 African languages in direct zero-reference mode).
-- **Language-Level Models:** `ghanaopenai/ghana-voice_{lang_code}`:
-  - `ghanaopenai/ghana-voice_twi` (Asante & Akuapem Twi)
-  - `ghanaopenai/ghana-voice_fat` (Fante)
-  - `ghanaopenai/ghana-voice_gaa` (Ga)
-  - `ghanaopenai/ghana-voice_ewe` (Ewe)
-  - `ghanaopenai/ghana-voice_dag` (Dagbani)
-  - `ghanaopenai/ghana-voice_dga` (Dagaare)
-  - `ghanaopenai/ghana-voice_gur` (Frafra / Farefare)
-  - `ghanaopenai/ghana-voice_nzi` (Nzema)
-  - `ghanaopenai/ghana-voice_aha` (Ahanta)
-  - `ghanaopenai/ghana-voice_sfw` (Sehwi)
-  - `ghanaopenai/ghana-voice_ada` (Dangme)
-  - `ghanaopenai/ghana-voice_eng` (Ghanaian English)
+- **Language-Level Models (Real Speech):** `ghanaopenai/ghana-voice_{lang_code}`
+- **Language-Level Models (Voice Converted / Persona):** `ghanaopenai/ghana-voice_{lang_code}_{voice_name}` (e.g. `ghana-voice_twi_clear-high-slow`)
+
+All models are published under the official [**Ghana Voice Collection**](https://huggingface.co/collections/ghanaopenai/ghana-voice-6ada4ff31e447e9db5288d08).
 
 ---
 
-## Fine-Tuning Recommendations: LoRA & Data Volume
+## Fine-Tuning Recommendations: LoRA & Audio Volume
 
 When fine-tuning from `ghanaopenai/ghana-voice-base` to create dedicated language models or personalized voices:
 
 1. **Recommended Audio Volume:** **Minimum 5 to 10 hours** (~3,000 to 6,000 clean, digit-free speech clips).
-   - *Why:* The base model already possesses general acoustic and cross-lingual phonetic capabilities. Providing 5–10 hours ensures sufficient lexical variety and vocal consistency, preventing memorization and overfitting.
 2. **LoRA Fine-Tuning:**
    - Always fine-tune with **LoRA (r=16, alpha=32)**.
    - Freezes 100% of the base model weights and trains only **6.4M adapter parameters (2.56%)**.
    - Preserves foundation phonetic stability while specializing dialect timbre and tone contours.
+3. **Voice Conversion Option (Africa Female VC)**:
+   - Users can choose to train on **Real Human Speech as it is** (default).
+   - Or apply any of **21 African female voices** (e.g., `clear-high-slow` for native Twi female voice, `warm-high` for Hausa, `bright-high` for Yoruba) via `--vc-voice <voice_name>`.
+
+To inspect all 21 available target voices from the command line:
+```bash
+ghana-voice list-vc-voices
+```
 
 ---
 
@@ -64,7 +62,7 @@ audio_array = voice.speak("Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo.", o
 ### 2. Command Line Interface (`ghana-voice speak`)
 
 ```bash
-# Direct CPU synthesis:
+# Direct CPU synthesis (runs on any laptop without GPU):
 ghana-voice speak \
   --lang twi \
   --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo." \
@@ -90,12 +88,20 @@ ghana-voice serve --port 8000
 
 ### 1. Prepare Dataset (`prep`)
 ```bash
+# Real human speech mode (zero voice conversion):
 ghana-voice prep \
   --input-dir path/to/recordings \
   --out-dir datasets/my_data \
   --lang twi \
   --min-dur 3.0 \
   --max-dur 15.0
+
+# Or apply a specific voice persona from africa-female-vc:
+ghana-voice prep \
+  --input-dir path/to/recordings \
+  --out-dir datasets/my_data_female \
+  --lang twi \
+  --vc-voice clear-high-slow
 ```
 
 ### 2. NeuCodec Encoding (`encode`)

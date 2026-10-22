@@ -1,9 +1,10 @@
 """
-Dataset preparation for ghana-voice-trainer.
+Dataset preparation for ghana-voice.
 
 Supports:
 1. Local directory with audio files (.wav, .flac, .mp3) + metadata.csv (filename|text).
 2. Hugging Face dataset (e.g. ghanaopenai/ghana-speech-female-22khz, split='train').
+3. Optional Voice Conversion via africa-female-vc (e.g. --vc-voice clear-high-slow).
 """
 
 import argparse
@@ -13,6 +14,7 @@ import io
 import os
 import re
 import soundfile as sf
+from typing import Optional
 from tqdm import tqdm
 
 from .constants import SAMPLE_RATE_16K
@@ -32,8 +34,16 @@ def safe_name(sample_id: str) -> str:
     return safe
 
 
-def prep_local_folder(input_dir: str, metadata_file: str, out_dir: str, lang: str,
-                      min_dur: float = 2.0, max_dur: float = 15.0, per_lang: int = 0):
+def prep_local_folder(
+    input_dir: str,
+    metadata_file: str,
+    out_dir: str,
+    lang: str,
+    min_dur: float = 2.0,
+    max_dur: float = 15.0,
+    per_lang: int = 0,
+    vc_voice: Optional[str] = None,
+):
     raw_dir = os.path.join(out_dir, "raw_audio")
     os.makedirs(raw_dir, exist_ok=True)
     meta_out = os.path.join(out_dir, "metadata.csv")
@@ -51,6 +61,10 @@ def prep_local_folder(input_dir: str, metadata_file: str, out_dir: str, lang: st
         rows = [ln.strip() for ln in f if ln.strip()]
 
     print(f"Preparing {len(rows)} local samples for {lang} ({code}) ...")
+    if vc_voice:
+        print(f"[VC Enabled] Converting audio into target voice: '{vc_voice}' ...")
+        from .vc import convert_audio
+
     for line in tqdm(rows):
         if per_lang and kept >= per_lang:
             break
@@ -81,11 +95,14 @@ def prep_local_folder(input_dir: str, metadata_file: str, out_dir: str, lang: st
             out_audio = os.path.join(raw_dir, out_filename)
             if not os.path.exists(out_audio):
                 arr, sr = sf.read(audio_src)
+                if vc_voice:
+                    arr = convert_audio(arr, voice_name=vc_voice, sr=sr, target_sr=16000)
+                    sr = 16000
                 sf.write(out_audio, arr, sr)
 
             lines_to_write.append(f"{out_filename}|{phones}\n")
             kept += 1
-        except Exception as exc:
+        except Exception:
             continue
 
     with open(meta_out, "w", encoding="utf-8") as f:
@@ -94,8 +111,17 @@ def prep_local_folder(input_dir: str, metadata_file: str, out_dir: str, lang: st
     print(f"Dataset prepared: {kept} samples -> {meta_out}")
 
 
-def prep_hf_dataset(hf_repo: str, subset: str, split: str, out_dir: str, lang: str,
-                    min_dur: float = 2.0, max_dur: float = 15.0, per_lang: int = 0):
+def prep_hf_dataset(
+    hf_repo: str,
+    subset: str,
+    split: str,
+    out_dir: str,
+    lang: str,
+    min_dur: float = 2.0,
+    max_dur: float = 15.0,
+    per_lang: int = 0,
+    vc_voice: Optional[str] = None,
+):
     from datasets import Audio, load_dataset
 
     raw_dir = os.path.join(out_dir, "raw_audio")
@@ -104,6 +130,10 @@ def prep_hf_dataset(hf_repo: str, subset: str, split: str, out_dir: str, lang: s
     code = resolve_lang_code(lang)
 
     print(f"Loading HuggingFace dataset: {hf_repo} (subset: {subset}, split: {split}) ...")
+    if vc_voice:
+        print(f"[VC Enabled] Converting audio into target voice: '{vc_voice}' ...")
+        from .vc import convert_audio
+
     ds = load_dataset(hf_repo, subset, split=split)
     ds = ds.cast_column("audio", Audio(decode=False))
 
@@ -135,42 +165,17 @@ def prep_hf_dataset(hf_repo: str, subset: str, split: str, out_dir: str, lang: s
             out_audio = os.path.join(raw_dir, filename)
             if not os.path.exists(out_audio):
                 arr, sr = sf.read(io.BytesIO(sample["audio"]["bytes"]))
+                if vc_voice:
+                    arr = convert_audio(arr, voice_name=vc_voice, sr=sr, target_sr=16000)
+                    sr = 16000
                 sf.write(out_audio, arr, sr)
 
             lines_to_write.append(f"{filename}|{phones}\n")
             kept += 1
-        except Exception as exc:
+        except Exception:
             continue
 
     with open(meta_out, "w", encoding="utf-8") as f:
         f.writelines(lines_to_write)
 
-    print(f"HF Dataset prepared: {kept} samples -> {meta_out}")
-
-
-def main():
-    ap = argparse.ArgumentParser(description="Prepare speech dataset for Neu-TTS training")
-    ap.add_argument("--out-dir", required=True, help="Destination directory for dataset")
-    ap.add_argument("--lang", required=True, help="Language code or name (e.g. twi, ewe, ga, eng)")
-    ap.add_argument("--input-dir", default="", help="Local directory containing audio and metadata.csv")
-    ap.add_argument("--metadata-file", default="metadata.csv")
-    ap.add_argument("--hf-repo", default="", help="HuggingFace dataset repository")
-    ap.add_argument("--subset", default="", help="HuggingFace dataset config/subset")
-    ap.add_argument("--split", default="train")
-    ap.add_argument("--min-dur", type=float, default=2.0)
-    ap.add_argument("--max-dur", type=float, default=15.0)
-    ap.add_argument("--per-lang", type=int, default=0, help="Max samples to keep (0 = all)")
-    args = ap.parse_args()
-
-    if args.hf_repo:
-        prep_hf_dataset(args.hf_repo, args.subset, args.split, args.out_dir, args.lang,
-                        args.min_dur, args.max_dur, args.per_lang)
-    elif args.input_dir:
-        prep_local_folder(args.input_dir, args.metadata_file, args.out_dir, args.lang,
-                          args.min_dur, args.max_dur, args.per_lang)
-    else:
-        ap.error("Provide either --input-dir or --hf-repo")
-
-
-if __name__ == "__main__":
-    main()
+    print(f"Prepared {kept} samples -> {meta_out}")
