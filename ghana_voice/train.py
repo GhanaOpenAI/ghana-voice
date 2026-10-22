@@ -404,6 +404,8 @@ def train(data_dir: str, output_dir: str, run_name: str,
         print(f"Trainable parameters for Full SFT: {n_trainable:,} (100%)")
     else:
         print("Training mode: LoRA adaptation.")
+        if hasattr(model, "enable_input_require_grads"):
+            model.enable_input_require_grads()
         lora_config = LoraConfig(
             r=lora_r,
             lora_alpha=lora_alpha,
