@@ -2,11 +2,9 @@
 
 **Ghana Voice** is a unified Python package and CLI toolkit for **inference, fine-tuning, and model management** of Ghanaian and African text-to-speech models built on [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) and [NeuCodec](https://huggingface.co/neuphonic/neucodec).
 
-Whether you want to generate high-fidelity speech in Ghanaian languages directly or fine-tune custom voice models on your own audio, `ghana-voice` provides complete zero-reference and in-context capabilities.
-
 ---
 
-## Foundation Models & Naming Convention
+## Foundation Base Model & Naming Convention
 
 - **Multilingual Base Model:** [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) (244M parameters, trained across 42 African languages in direct zero-reference mode).
 - **Language-Level Models:** `ghanaopenai/ghana-voice_{lang_code}`:
@@ -25,6 +23,19 @@ Whether you want to generate high-fidelity speech in Ghanaian languages directly
 
 ---
 
+## Fine-Tuning Recommendations: LoRA & Data Volume
+
+When fine-tuning from `ghanaopenai/ghana-voice-base` to create dedicated language models or personalized voices:
+
+1. **Recommended Audio Volume:** **Minimum 5 to 10 hours** (~3,000 to 6,000 clean, digit-free speech clips).
+   - *Why:* The base model already possesses general acoustic and cross-lingual phonetic capabilities. Providing 5–10 hours ensures sufficient lexical variety and vocal consistency, preventing memorization and overfitting.
+2. **LoRA Fine-Tuning:**
+   - Always fine-tune with **LoRA (r=16, alpha=32)**.
+   - Freezes 100% of the base model weights and trains only **6.4M adapter parameters (2.56%)**.
+   - Preserves foundation phonetic stability while specializing dialect timbre and tone contours.
+
+---
+
 ## Installation
 
 ```bash
@@ -36,62 +47,48 @@ pip install -e .
 
 ---
 
-## 🔊 Speech Synthesis & Inference
+## 🔊 Speech Synthesis & Inference (CLI, Python API, Web UI, REST)
 
 ### 1. Python API (`GhanaVoice`)
 
 ```python
 from ghana_voice import GhanaVoice
 
-# Auto-resolves model:
-# 1. Local path if provided
-# 2. Hugging Face repo ghanaopenai/ghana-voice_{lang}
-# 3. Base model ghanaopenai/ghana-voice-base
-voice = GhanaVoice(lang="twi")
+# Auto-resolves model from HF (ghanaopenai/ghana-voice_twi or ghana-voice-base):
+voice = GhanaVoice(lang="twi", device="cpu")
 
-# Direct zero-reference synthesis from natural text:
+# Zero-reference synthesis directly from natural text:
 audio_array = voice.speak("Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo.", output_file="akwaaba.wav")
-
-# Synthesize other Ghanaian languages:
-voice_ga = GhanaVoice(lang="ga")
-voice_ga.speak("Nyɔŋmɔ ji mi nɔkwɛlɔ, nɔ ko nɔ ko ehiaŋ mi.", output_file="ga.wav")
-
-voice_ewe = GhanaVoice(lang="ewe")
-voice_ewe.speak("Yehowa nye nye kplɔla, naneke mehiãam o.", output_file="ewe.wav")
 ```
 
 ### 2. Command Line Interface (`ghana-voice speak`)
 
 ```bash
-# Speak Twi:
+# Direct CPU synthesis:
 ghana-voice speak \
   --lang twi \
-  --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo ne wo fiefoɔ nyinaa." \
-  --out twi_sample.wav
+  --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo." \
+  --device cpu \
+  --out twi.wav
+```
 
-# Speak Ga:
-ghana-voice speak \
-  --lang gaa \
-  --text "Nyɔŋmɔ ji mi nɔkwɛlɔ, nɔ ko nɔ ko ehiaŋ mi." \
-  --out ga_sample.wav
+### 3. Interactive Web UI (`ghana-voice web`)
 
-# Speak with a custom fine-tuned checkpoint:
-ghana-voice speak \
-  --model output/my-custom-model/final \
-  --lang twi \
-  --text "Me kɔ sukuu da biara na mepɛ sɛ mesua ade." \
-  --out custom.wav
+```bash
+ghana-voice web --port 7860
+```
+
+### 4. OpenAI-Compatible REST API Server (`ghana-voice serve`)
+
+```bash
+ghana-voice serve --port 8000
 ```
 
 ---
 
-## 🛠️ Fine-Tuning the Base Model
-
-Train new voice models or specialize existing models with Full Parameter SFT or LoRA:
+## 🛠️ Fine-Tuning the Base Model with LoRA
 
 ### 1. Prepare Dataset (`prep`)
-Filters out transcripts containing digits, strips dead silence with an 80ms onset/release buffer, and converts text to word-separated IPA:
-
 ```bash
 ghana-voice prep \
   --input-dir path/to/recordings \
@@ -102,53 +99,34 @@ ghana-voice prep \
 ```
 
 ### 2. NeuCodec Encoding (`encode`)
-Encodes trimmed audio into discrete acoustic tokens:
-
 ```bash
 ghana-voice encode \
   --data-dir datasets/my_data \
   --batch-size 32
 ```
 
-### 3. Training (`train`)
-Fine-tune the foundation model with Full Parameter SFT or LoRA:
-
+### 3. LoRA Training (`train`)
 ```bash
 ghana-voice train \
   --base-model ghanaopenai/ghana-voice-base \
   --data-dir datasets/my_data \
   --output-dir output \
-  --run-name my-custom-model \
-  --full-sft \
+  --run-name my-twi-model \
   --no-ref \
   --epochs 100 \
-  --learning-rate 3e-5 \
+  --learning-rate 5e-5 \
   --batch-size 8 \
   --grad-accum 4 \
   --early-stopping-patience 10 \
   --eval-cer
 ```
-*Note: Uses `JointPlateauEarlyStoppingCallback` to monitor both `eval_loss` and `eval_cer` simultaneously, stopping only when both metrics have plateaued.*
 
----
-
-## Language Tiers & Data Requirements
-
-Fine-tuning data requirements depend on the language tier:
-
-### 🌟 Tier 1: Core Ghanaian Languages (Deeply Pre-tuned)
-- **Data Requirement:** **2 to 3 hours** (~1,000–1,500 clean clips).
-- Languages: `asante_twi`, `akuapem_twi`, `fante`, `ga`, `ewe`, `dagbani`, `dagaare`, `frafra`, `nzema`, `ahanta`, `sehwi`, `dangme`.
-
-### 🌍 Tier 2: Extended Languages + Ghanaian English
-- **Data Requirement:** **3 to 6 hours** (~1,500–3,000 clean clips).
-- Languages: `ghana_english` (English), `kusaal`, `mampruli`, `gonja`, `kasem`, `buli`, `konkomba`, `hausa`, `bimoba`, `chumburung`, `fulfulde`, `lelemi`, `nkonya`, `ntrubo`, `paasaal`, `sekpele`, `selee`, `sisaala`, `siwu`, `tampulma`, `tem`, `tuwuli`, `vagla`, `deg`, `avatime`, `bassar`, `birifor`, `bissa`, `gikyode`, `kabiye`, `konni`, `nawuri`, `anyin`.
-
-To inspect the full list from the command line:
+### 4. Export GGUF for CPU (`export-gguf`)
 ```bash
-ghana-voice list-langs
-ghana-voice list-langs --tier 1
-ghana-voice list-langs --tier 2
+ghana-voice export-gguf \
+  --model-dir output/my-twi-model/final \
+  --out-dir output/my-twi-model/gguf \
+  --quant Q4_K_M Q8_0
 ```
 
 ---

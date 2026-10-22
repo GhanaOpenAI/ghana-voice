@@ -1,5 +1,5 @@
 """
-Global constants, Tier hierarchies, and default parameters for ghana-voice-trainer.
+Global constants, Tier hierarchies, and default parameters for ghana-voice.
 """
 
 import string
@@ -34,62 +34,66 @@ DEFAULT_REPETITION_PENALTY = 1.2
 PUNCT_SET = set(string.punctuation) | set("“”‘’–—…«»")
 
 # =========================================================================
-# LANGUAGE TIERS: Foundation Architecture & Data Requirements
+# LANGUAGE TIERS: Data Requirements & Fine-Tuning Recommendations
 # =========================================================================
+# For all language-level or custom voice fine-tuning from ghana-voice-base,
+# we recommend a minimum of 5 to 10 hours of clean audio (~3,000–6,000 clips)
+# trained with LoRA adaptation to prevent overfitting and retain base fluency.
+
+REC_HOURS_TIER1 = "5-10 hours"
+REC_HOURS_TIER2 = "5-10 hours"
 
 # Tier 1: Core Ghanaian Languages (Deeply pre-trained in base model).
-# Recommended training data for custom voice or specialization: 2 to 3 hours (~1,000–1,500 clips).
 TIER1_LANGUAGES = {
-    "asante_twi": {"display": "Asante Twi", "iso": "twi", "family": "Akan", "rec_hours": "2-3 hours"},
-    "akuapem_twi": {"display": "Akuapem Twi", "iso": "twi", "family": "Akan", "rec_hours": "2-3 hours"},
-    "fante": {"display": "Fante", "iso": "fat", "family": "Akan", "rec_hours": "2-3 hours"},
-    "ga": {"display": "Ga", "iso": "gaa", "family": "Ga-Dangme", "rec_hours": "2-3 hours"},
-    "ewe": {"display": "Ewe", "iso": "ewe", "family": "Gbe", "rec_hours": "2-3 hours"},
-    "dagbani": {"display": "Dagbani", "iso": "dag", "family": "Gur", "rec_hours": "2-3 hours"},
-    "dagaare": {"display": "Southern Dagaare", "iso": "dga", "family": "Gur", "rec_hours": "2-3 hours"},
-    "frafra": {"display": "Frafra (Farefare)", "iso": "gur", "family": "Gur", "rec_hours": "2-3 hours"},
-    "nzema": {"display": "Nzema", "iso": "nzi", "family": "Kwa", "rec_hours": "2-3 hours"},
-    "ahanta": {"display": "Ahanta", "iso": "aha", "family": "Kwa", "rec_hours": "2-3 hours"},
-    "sehwi": {"display": "Sehwi", "iso": "sfw", "family": "Kwa", "rec_hours": "2-3 hours"},
-    "dangme": {"display": "Dangme", "iso": "ada", "family": "Ga-Dangme", "rec_hours": "2-3 hours"},
+    "asante_twi": {"display": "Asante Twi", "iso": "twi", "family": "Akan", "rec_hours": REC_HOURS_TIER1},
+    "akuapem_twi": {"display": "Akuapem Twi", "iso": "twi", "family": "Akan", "rec_hours": REC_HOURS_TIER1},
+    "fante": {"display": "Fante", "iso": "fat", "family": "Akan", "rec_hours": REC_HOURS_TIER1},
+    "ga": {"display": "Ga", "iso": "gaa", "family": "Ga-Dangme", "rec_hours": REC_HOURS_TIER1},
+    "ewe": {"display": "Ewe", "iso": "ewe", "family": "Gbe", "rec_hours": REC_HOURS_TIER1},
+    "dagbani": {"display": "Dagbani", "iso": "dag", "family": "Gur", "rec_hours": REC_HOURS_TIER1},
+    "dagaare": {"display": "Southern Dagaare", "iso": "dga", "family": "Gur", "rec_hours": REC_HOURS_TIER1},
+    "frafra": {"display": "Frafra (Farefare)", "iso": "gur", "family": "Gur", "rec_hours": REC_HOURS_TIER1},
+    "nzema": {"display": "Nzema", "iso": "nzi", "family": "Kwa", "rec_hours": REC_HOURS_TIER1},
+    "ahanta": {"display": "Ahanta", "iso": "aha", "family": "Kwa", "rec_hours": REC_HOURS_TIER1},
+    "sehwi": {"display": "Sehwi", "iso": "sfw", "family": "Kwa", "rec_hours": REC_HOURS_TIER1},
+    "dangme": {"display": "Dangme", "iso": "ada", "family": "Ga-Dangme", "rec_hours": REC_HOURS_TIER1},
 }
 
-# Tier 2: Extended Ghanaian & Regional West African Languages + Ghanaian English.
-# Recommended training data for custom voice or specialization: 3 to 6 hours (~1,500–3,000 clips).
+# Tier 2: Extended Ghanaian & Regional African Languages + Ghanaian English.
 TIER2_LANGUAGES = {
-    "ghana_english": {"display": "Ghanaian English", "iso": "eng", "family": "English", "rec_hours": "3-6 hours"},
-    "kusaal": {"display": "Kusaal", "iso": "kus", "family": "Gur", "rec_hours": "3-6 hours"},
-    "mampruli": {"display": "Mampruli", "iso": "maw", "family": "Gur", "rec_hours": "3-6 hours"},
-    "gonja": {"display": "Gonja", "iso": "gjn", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "kasem": {"display": "Kasem", "iso": "xsm", "family": "Gur", "rec_hours": "3-6 hours"},
-    "buli": {"display": "Buli", "iso": "bwu", "family": "Gur", "rec_hours": "3-6 hours"},
-    "konkomba": {"display": "Konkomba", "iso": "xon", "family": "Gur", "rec_hours": "3-6 hours"},
-    "hausa": {"display": "Hausa", "iso": "hau", "family": "Chadic", "rec_hours": "3-6 hours"},
-    "fulfulde": {"display": "Fulfulde", "iso": "ffm", "family": "Senegambian", "rec_hours": "3-6 hours"},
-    "bimoba": {"display": "Bimoba", "iso": "bim", "family": "Gur", "rec_hours": "3-6 hours"},
-    "chumburung": {"display": "Chumburung", "iso": "ncu", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "lelemi": {"display": "Lelemi", "iso": "lef", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "nkonya": {"display": "Nkonya", "iso": "nko", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "ntrubo": {"display": "Ntrubo", "iso": "ntr", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "paasaal": {"display": "Paasaal", "iso": "sig", "family": "Gur", "rec_hours": "3-6 hours"},
-    "sekpele": {"display": "Sekpele", "iso": "lip", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "selee": {"display": "Selee", "iso": "snw", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "sisaala": {"display": "Sisaala", "iso": "sil", "family": "Gur", "rec_hours": "3-6 hours"},
-    "siwu": {"display": "Siwu", "iso": "akp", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "tampulma": {"display": "Tampulma", "iso": "tpm", "family": "Gur", "rec_hours": "3-6 hours"},
-    "tem": {"display": "Tem", "iso": "kdh", "family": "Gur", "rec_hours": "3-6 hours"},
-    "tuwuli": {"display": "Tuwuli", "iso": "bov", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "vagla": {"display": "Vagla", "iso": "vag", "family": "Gur", "rec_hours": "3-6 hours"},
-    "deg": {"display": "Deg", "iso": "mzw", "family": "Gur", "rec_hours": "3-6 hours"},
-    "avatime": {"display": "Avatime", "iso": "avn", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "bassar": {"display": "Bassar (Ntcham)", "iso": "bud", "family": "Gur", "rec_hours": "3-6 hours"},
-    "birifor": {"display": "Southern Birifor", "iso": "biv", "family": "Gur", "rec_hours": "3-6 hours"},
-    "bissa": {"display": "Bissa", "iso": "bib", "family": "Mande", "rec_hours": "3-6 hours"},
-    "gikyode": {"display": "Gikyode", "iso": "acd", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "kabiye": {"display": "Kabiye", "iso": "kbp", "family": "Gur", "rec_hours": "3-6 hours"},
-    "konni": {"display": "Konni", "iso": "kma", "family": "Gur", "rec_hours": "3-6 hours"},
-    "nawuri": {"display": "Nawuri", "iso": "naw", "family": "Kwa", "rec_hours": "3-6 hours"},
-    "anyin": {"display": "Anyin", "iso": "any", "family": "Kwa", "rec_hours": "3-6 hours"},
+    "ghana_english": {"display": "Ghanaian English", "iso": "eng", "family": "English", "rec_hours": REC_HOURS_TIER2},
+    "kusaal": {"display": "Kusaal", "iso": "kus", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "mampruli": {"display": "Mampruli", "iso": "maw", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "gonja": {"display": "Gonja", "iso": "gjn", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "kasem": {"display": "Kasem", "iso": "xsm", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "buli": {"display": "Buli", "iso": "bwu", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "konkomba": {"display": "Konkomba", "iso": "xon", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "hausa": {"display": "Hausa", "iso": "hau", "family": "Chadic", "rec_hours": REC_HOURS_TIER2},
+    "fulfulde": {"display": "Fulfulde", "iso": "ffm", "family": "Senegambian", "rec_hours": REC_HOURS_TIER2},
+    "bimoba": {"display": "Bimoba", "iso": "bim", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "chumburung": {"display": "Chumburung", "iso": "ncu", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "lelemi": {"display": "Lelemi", "iso": "lef", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "nkonya": {"display": "Nkonya", "iso": "nko", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "ntrubo": {"display": "Ntrubo", "iso": "ntr", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "paasaal": {"display": "Paasaal", "iso": "sig", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "sekpele": {"display": "Sekpele", "iso": "lip", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "selee": {"display": "Selee", "iso": "snw", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "sisaala": {"display": "Sisaala", "iso": "sil", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "siwu": {"display": "Siwu", "iso": "akp", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "tampulma": {"display": "Tampulma", "iso": "tpm", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "tem": {"display": "Tem", "iso": "kdh", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "tuwuli": {"display": "Tuwuli", "iso": "bov", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "vagla": {"display": "Vagla", "iso": "vag", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "deg": {"display": "Deg", "iso": "mzw", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "avatime": {"display": "Avatime", "iso": "avn", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "bassar": {"display": "Bassar (Ntcham)", "iso": "bud", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "birifor": {"display": "Southern Birifor", "iso": "biv", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "bissa": {"display": "Bissa", "iso": "bib", "family": "Mande", "rec_hours": REC_HOURS_TIER2},
+    "gikyode": {"display": "Gikyode", "iso": "acd", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "kabiye": {"display": "Kabiye", "iso": "kbp", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "konni": {"display": "Konni", "iso": "kma", "family": "Gur", "rec_hours": REC_HOURS_TIER2},
+    "nawuri": {"display": "Nawuri", "iso": "naw", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
+    "anyin": {"display": "Anyin", "iso": "any", "family": "Kwa", "rec_hours": REC_HOURS_TIER2},
 }
 
 ALL_SUPPORTED_LANGUAGES = {**TIER1_LANGUAGES, **TIER2_LANGUAGES}
@@ -224,5 +228,5 @@ def get_language_info(lang: str) -> dict:
         "display": lang,
         "iso": canonical,
         "family": "African",
-        "rec_hours": "3-6 hours",
+        "rec_hours": "5-10 hours",
     }

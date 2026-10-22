@@ -15,6 +15,7 @@ LLAMA_QUANTIZE = Path("/mnt/volume_d2wey28/tools/llama.cpp/build/bin/llama-quant
 def export_to_gguf(
     model_dir: str,
     out_dir: str,
+    name: Optional[str] = None,
     quant_types: Optional[List[str]] = None,
     clean_f16: bool = True,
 ) -> List[str]:
@@ -24,6 +25,7 @@ def export_to_gguf(
     Args:
         model_dir: Directory containing PyTorch safetensors model and tokenizer.
         out_dir: Output directory for GGUF files.
+        name: Base filename prefix for GGUF models (e.g. "ghana-voice_twi").
         quant_types: List of quantization types, default: ["Q4_K_M", "Q8_0"].
         clean_f16: Whether to delete the intermediate uncompressed F16 GGUF file.
 
@@ -37,8 +39,15 @@ def export_to_gguf(
     o_path = Path(out_dir)
     o_path.mkdir(parents=True, exist_ok=True)
 
-    model_name = m_path.name
-    f16_file = o_path / f"{model_name}-f16.gguf"
+    # Resolve model name: if name given use it, else if directory is 'final', look up parent
+    if name:
+        base_name = name
+    elif m_path.name == "final":
+        base_name = m_path.parent.name.replace("neu-tts-ghana-", "ghana-voice_")
+    else:
+        base_name = m_path.name
+
+    f16_file = o_path / f"{base_name}-f16.gguf"
     generated_files = []
 
     print("=" * 65)
@@ -59,7 +68,7 @@ def export_to_gguf(
     print(f"[GGUF Export] Created F16 base: {f16_file} ({f16_file.stat().st_size / 1e6:.1f} MB)")
 
     for qtype in quant_types:
-        q_file = o_path / f"{model_name}-{qtype}.gguf"
+        q_file = o_path / f"{base_name}-{qtype}.gguf"
         print(f"[GGUF Export] Quantizing to {qtype} -> {q_file} ...")
         quant_cmd = [str(LLAMA_QUANTIZE), str(f16_file), str(q_file), qtype]
         subprocess.run(quant_cmd, check=True)
