@@ -155,11 +155,63 @@ class CEREvalCallback(TrainerCallback):
 
         mean_cer = sum(cers) / len(cers) if cers else 1.0
         metrics["eval_cer"] = mean_cer
+        loss_val = metrics.get("eval_loss", 0.0)
+        metrics["eval_joint_score"] = loss_val + (mean_cer * 10.0)
 
         print(f"\n>>> [ASR Eval @ Step {state.global_step}] Mean CER: {mean_cer:.2%} (Loss: {metrics.get('eval_loss', 0):.4f}) <<<", flush=True)
         for t, h, c in sample_logs[:2]:
             print(f"    REF: {t}...\n    ASR: {h}... (CER: {c:.2%})", flush=True)
         print("", flush=True)
+
+
+class JointPlateauEarlyStoppingCallback(TrainerCallback):
+    """
+    Early stops when BOTH eval_loss AND eval_cer have plateaued.
+    An evaluation check is considered an improvement if EITHER:
+      - eval_loss improves by >= min_loss_delta, OR
+      - eval_cer improves by >= min_cer_delta.
+    Training continues as long as at least one metric is still improving.
+    Only when BOTH have stagnated for `patience` checks does training stop.
+    """
+    def __init__(self, patience: int = 8, min_loss_delta: float = 0.005, min_cer_delta: float = 0.005):
+        self.patience = patience
+        self.min_loss_delta = min_loss_delta
+        self.min_cer_delta = min_cer_delta
+        self.best_loss = float("inf")
+        self.best_cer = float("inf")
+        self.loss_stagnant_count = 0
+        self.cer_stagnant_count = 0
+
+    def on_evaluate(self, args, state, control, metrics=None, **kwargs):
+        if not metrics:
+            return
+
+        current_loss = metrics.get("eval_loss")
+        current_cer = metrics.get("eval_cer")
+
+        if current_loss is not None:
+            if current_loss < self.best_loss - self.min_loss_delta:
+                self.best_loss = current_loss
+                self.loss_stagnant_count = 0
+            else:
+                self.loss_stagnant_count += 1
+
+        if current_cer is not None:
+            if current_cer < self.best_cer - self.min_cer_delta:
+                self.best_cer = current_cer
+                self.cer_stagnant_count = 0
+            else:
+                self.cer_stagnant_count += 1
+
+        if self.loss_stagnant_count >= self.patience and self.cer_stagnant_count >= self.patience:
+            print(
+                f"\n[Joint Plateau Triggered @ Step {state.global_step}] Both eval_loss "
+                f"(stagnant {self.loss_stagnant_count} checks, best: {self.best_loss:.4f}) and eval_cer "
+                f"(stagnant {self.cer_stagnant_count} checks, best: {self.best_cer:.2%}) have plateaued. "
+                f"Stopping training automatically.\n",
+                flush=True,
+            )
+            control.should_training_stop = True
 
 
 class TTSDataset(Dataset):
@@ -368,7 +420,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
     warmup_steps = max(1, int(total_steps * 0.03))
 
     has_asr = os.path.exists(asr_model) and os.path.exists(asr_tokens)
-    metric_best = "eval_cer" if (eval_cer and has_asr) else "eval_loss"
+    metric_best = "eval_joint_score" if (eval_cer and has_asr) else "eval_loss"
     print(f"Optimization metric for best model & early stopping: {metric_best}")
 
     training_args = TrainingArguments(
@@ -505,7 +557,11 @@ def train(data_dir: str, output_dir: str, run_name: str,
             callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
             print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences, no_ref={no_ref}).")
 
-        callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
+        callbacks.append(JointPlateauEarlyStoppingCallback(
+            patience=early_stopping_patience,
+            min_loss_delta=0.005,
+            min_cer_delta=0.005,
+        ))
 
     trainer = Trainer(
         model=model,
