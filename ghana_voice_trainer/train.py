@@ -437,22 +437,34 @@ def train(data_dir: str, output_dir: str, run_name: str,
             }
 
             # Detect language code
-            first_fn = full_dataset.samples[0]["filename"]
-            detected_lang = first_fn.split("_")[0]
-            if "twi" in run_name or "twi" in data_dir:
+            first_fn = full_dataset.samples[0]["filename"].lower()
+            detected_lang = "twi"
+            if any(k in first_fn for k in ["asante", "akuapem", "twi"]):
                 detected_lang = "twi"
-            elif "ga" in run_name or "ga" in data_dir:
+            elif any(k in first_fn for k in ["gaa", "ga"]):
                 detected_lang = "gaa"
-            elif "ewe" in run_name or "ewe" in data_dir:
+            elif "ewe" in first_fn:
                 detected_lang = "ewe"
-            elif "fat" in run_name or "fante" in data_dir:
+            elif any(k in first_fn for k in ["fat", "fante"]):
                 detected_lang = "fat"
-            elif "dag" in run_name or "dag" in data_dir:
+            elif "dag" in first_fn:
                 detected_lang = "dag"
-            elif "ada" in run_name or "dangme" in data_dir:
+            elif any(k in first_fn for k in ["dga", "dagaare"]):
+                detected_lang = "dga"
+            elif any(k in first_fn for k in ["gur", "frafra"]):
+                detected_lang = "gur"
+            elif any(k in first_fn for k in ["nzi", "nzema"]):
+                detected_lang = "nzi"
+            elif any(k in first_fn for k in ["aha", "ahanta"]):
+                detected_lang = "aha"
+            elif any(k in first_fn for k in ["sfw", "sehwi"]):
+                detected_lang = "sfw"
+            elif any(k in first_fn for k in ["ada", "dangme"]):
                 detected_lang = "ada"
-            elif "eng" in run_name or "english" in data_dir:
+            elif any(k in first_fn for k in ["eng", "en"]):
                 detected_lang = "eng"
+            else:
+                detected_lang = "twi"
 
             test_texts = CANONICAL_TESTS.get(detected_lang, [
                 "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
