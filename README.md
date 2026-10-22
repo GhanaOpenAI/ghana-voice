@@ -1,134 +1,99 @@
-# Ghana Voice Trainer 🇬🇭🎙️
+# Ghana Voice 🇬🇭🎙️
 
-**Ghana Voice Trainer** is an end-to-end toolkit for training, fine-tuning, and evaluating Ghanaian and West African text-to-speech models built on [`ghanaopenai/neu-tts-ghana-base`](https://huggingface.co/ghanaopenai/neu-tts-ghana-base) and [NeuCodec](https://huggingface.co/neuphonic/neucodec).
+**Ghana Voice** is a unified Python package and CLI toolkit for **inference, fine-tuning, and model management** of Ghanaian and African text-to-speech models built on [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) and [NeuCodec](https://huggingface.co/neuphonic/neucodec).
 
-Whether you want to clone your own voice or train a dedicated single-language model (Twi, Fante, Ga, Ewe, Dagbani, Ghanaian English, Kusaal, etc.), this toolkit handles the entire pipeline:
-1. **Phonemization** via [africa-g2p](https://github.com/AfriSpeech/africa-g2p) into word-separated IPA phonetics (no intra-word spaces, preserved punctuation, zero language tags).
-2. **Audio Encoding** into discrete acoustic codes via NeuCodec (GPU-batched, auto-resuming).
-3. **Full SFT or LoRA Fine-Tuning** with dynamic per-batch sequence padding (3x faster), cosine decay scheduling, and **Joint Loss + CER Plateau Early Stopping**.
-4. **Adapter Merging** into a standalone model ready for deployment.
-5. **Speech Synthesis & Intelligibility Evaluation** with [sherpa-onnx](https://github.com/k2-fsa/sherpa-onnx) OmniASR 300M (measuring Character Error Rate).
+Whether you want to generate high-fidelity speech in Ghanaian languages directly or fine-tune custom voice models on your own audio, `ghana-voice` provides complete zero-reference and in-context capabilities.
 
 ---
 
-## Foundation Base Model
+## Foundation Models & Naming Convention
 
-All training builds upon our official Ghanaian foundation model:
-- **Base Model:** [`ghanaopenai/neu-tts-ghana-base`](https://huggingface.co/ghanaopenai/neu-tts-ghana-base) (244M parameters, trained across 42 Ghanaian and West African languages in direct zero-reference mode).
-
----
-
-## Language Tiers & Data Requirements
-
-Because `ghanaopenai/neu-tts-ghana-base` has already undergone extensive multilingual zero-reference training, fine-tuning data requirements depend on the language tier:
-
-### 🌟 Tier 1: Core Ghanaian Languages (Deeply Pre-tuned)
-- **Data Requirement:** **2 to 3 hours** (~1,000–1,500 clean clips).
-- These languages are already deeply anchored in the base foundation model weights and need minimal data to specialize:
-  - **Asante Twi** (`asante_twi` / `twi`)
-  - **Akuapem Twi** (`akuapem_twi` / `twi`)
-  - **Fante** (`fante` / `fat`)
-  - **Ga** (`ga` / `gaa`)
-  - **Ewe** (`ewe` / `ewe`)
-  - **Dagbani** (`dagbani` / `dag`)
-  - **Southern Dagaare** (`dagaare` / `dga`)
-  - **Frafra / Farefare** (`frafra` / `gur`)
-  - **Nzema** (`nzema` / `nzi`)
-  - **Ahanta** (`ahanta` / `aha`)
-  - **Sehwi** (`sehwi` / `sfw`)
-  - **Dangme** (`dangme` / `ada`)
-
-### 🌍 Tier 2: Extended Ghanaian & Regional African Languages + Ghanaian English
-- **Data Requirement:** **3 to 6 hours** (~1,500–3,000 clean clips).
-- Languages requiring slightly more audio for acoustic and tonal anchoring:
-  - **Ghanaian English** (`ghana_english` / `eng`)
-  - **Kusaal** (`kusaal` / `kus`)
-  - **Mampruli** (`mampruli` / `maw`)
-  - **Gonja** (`gonja` / `gjn`)
-  - **Kasem** (`kasem` / `xsm`)
-  - **Buli** (`buli` / `bwu`)
-  - **Konkomba** (`konkomba` / `xon`)
-  - **Hausa** (`hausa` / `hau`)
-  - **Bimoba** (`bimoba` / `bim`)
-  - **Chumburung** (`chumburung` / `ncu`)
-  - **Fulfulde** (`fulfulde` / `ffm`)
-  - **Lelemi** (`lelemi` / `lef`)
-  - **Nkonya** (`nkonya` / `nko`)
-  - **Ntrubo** (`ntrubo` / `ntr`)
-  - **Paasaal** (`paasaal` / `sig`)
-  - **Sekpele** (`sekpele` / `lip`)
-  - **Selee** (`selee` / `snw`)
-  - **Sisaala** (`sisaala` / `sil`)
-  - **Siwu** (`siwu` / `akp`)
-  - **Tampulma** (`tampulma` / `tpm`)
-  - **Tem** (`tem` / `kdh`)
-  - **Tuwuli** (`tuwuli` / `bov`)
-  - **Vagla** (`vagla` / `vag`)
-  - **Deg** (`deg` / `mzw`)
-  - **Avatime** (`avatime` / `avn`)
-  - **Bassar** (`bassar` / `bud`)
-  - **Birifor** (`birifor` / `biv`)
-  - **Bissa** (`bissa` / `bib`)
-  - **Gikyode** (`gikyode` / `acd`)
-  - **Kabiye** (`kabiye` / `kbp`)
-  - **Konni** (`konni` / `kma`)
-  - **Nawuri** (`nawuri` / `naw`)
-  - **Anyin** (`anyin` / `any`)
-
-To inspect the full list from the command line:
-```bash
-ghana-voice-trainer list-langs
-# Or inspect specific tier:
-ghana-voice-trainer list-langs --tier 1
-ghana-voice-trainer list-langs --tier 2
-```
+- **Multilingual Base Model:** [`ghanaopenai/ghana-voice-base`](https://huggingface.co/ghanaopenai/ghana-voice-base) (244M parameters, trained across 42 African languages in direct zero-reference mode).
+- **Language-Level Models:** `ghanaopenai/ghana-voice_{lang_code}`:
+  - `ghanaopenai/ghana-voice_twi` (Asante & Akuapem Twi)
+  - `ghanaopenai/ghana-voice_fat` (Fante)
+  - `ghanaopenai/ghana-voice_gaa` (Ga)
+  - `ghanaopenai/ghana-voice_ewe` (Ewe)
+  - `ghanaopenai/ghana-voice_dag` (Dagbani)
+  - `ghanaopenai/ghana-voice_dga` (Dagaare)
+  - `ghanaopenai/ghana-voice_gur` (Frafra / Farefare)
+  - `ghanaopenai/ghana-voice_nzi` (Nzema)
+  - `ghanaopenai/ghana-voice_aha` (Ahanta)
+  - `ghanaopenai/ghana-voice_sfw` (Sehwi)
+  - `ghanaopenai/ghana-voice_ada` (Dangme)
+  - `ghanaopenai/ghana-voice_eng` (Ghanaian English)
 
 ---
 
 ## Installation
 
 ```bash
-git clone https://github.com/GhanaOpenAI/ghana-voice-trainer.git
-cd ghana-voice-trainer
+git clone https://github.com/GhanaOpenAI/ghana-voice.git
+cd ghana-voice
 pip install -r requirements.txt
 pip install -e .
 ```
 
 ---
 
-## Quickstart: All-In-One Pipeline
+## 🔊 Speech Synthesis & Inference
 
-Train a model on your dataset from start to finish with a single command:
+### 1. Python API (`GhanaVoice`)
+
+```python
+from ghana_voice import GhanaVoice
+
+# Auto-resolves model:
+# 1. Local path if provided
+# 2. Hugging Face repo ghanaopenai/ghana-voice_{lang}
+# 3. Base model ghanaopenai/ghana-voice-base
+voice = GhanaVoice(lang="twi")
+
+# Direct zero-reference synthesis from natural text:
+audio_array = voice.speak("Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo.", output_file="akwaaba.wav")
+
+# Synthesize other Ghanaian languages:
+voice_ga = GhanaVoice(lang="ga")
+voice_ga.speak("Nyɔŋmɔ ji mi nɔkwɛlɔ, nɔ ko nɔ ko ehiaŋ mi.", output_file="ga.wav")
+
+voice_ewe = GhanaVoice(lang="ewe")
+voice_ewe.speak("Yehowa nye nye kplɔla, naneke mehiãam o.", output_file="ewe.wav")
+```
+
+### 2. Command Line Interface (`ghana-voice speak`)
 
 ```bash
-# Fine-tune Asante Twi (Tier 1: 2-3h audio):
-ghana-voice-trainer run \
-  --input-dir path/to/twi_recordings \
-  --data-dir datasets/twi \
+# Speak Twi:
+ghana-voice speak \
   --lang twi \
-  --run-name twi-voice-model \
-  --epochs 30 \
-  --learning-rate 3e-5
+  --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo ne wo fiefoɔ nyinaa." \
+  --out twi_sample.wav
 
-# Fine-tune Ghanaian English (Tier 2: 3-6h audio):
-ghana-voice-trainer run \
-  --input-dir path/to/english_recordings \
-  --data-dir datasets/ghana_english \
-  --lang eng \
-  --run-name ghana-english-model \
-  --epochs 40 \
-  --learning-rate 3e-5
+# Speak Ga:
+ghana-voice speak \
+  --lang gaa \
+  --text "Nyɔŋmɔ ji mi nɔkwɛlɔ, nɔ ko nɔ ko ehiaŋ mi." \
+  --out ga_sample.wav
+
+# Speak with a custom fine-tuned checkpoint:
+ghana-voice speak \
+  --model output/my-custom-model/final \
+  --lang twi \
+  --text "Me kɔ sukuu da biara na mepɛ sɛ mesua ade." \
+  --out custom.wav
 ```
 
 ---
 
-## Step-by-Step Pipeline
+## 🛠️ Fine-Tuning the Base Model
+
+Train new voice models or specialize existing models with Full Parameter SFT or LoRA:
 
 ### 1. Prepare Dataset (`prep`)
 Filters out transcripts containing digits, strips dead silence with an 80ms onset/release buffer, and converts text to word-separated IPA:
 
 ```bash
-ghana-voice-trainer prep \
+ghana-voice prep \
   --input-dir path/to/recordings \
   --out-dir datasets/my_data \
   --lang twi \
@@ -140,7 +105,7 @@ ghana-voice-trainer prep \
 Encodes trimmed audio into discrete acoustic tokens:
 
 ```bash
-ghana-voice-trainer encode \
+ghana-voice encode \
   --data-dir datasets/my_data \
   --batch-size 32
 ```
@@ -149,31 +114,41 @@ ghana-voice-trainer encode \
 Fine-tune the foundation model with Full Parameter SFT or LoRA:
 
 ```bash
-ghana-voice-trainer train \
-  --base-model ghanaopenai/neu-tts-ghana-base \
+ghana-voice train \
+  --base-model ghanaopenai/ghana-voice-base \
   --data-dir datasets/my_data \
   --output-dir output \
   --run-name my-custom-model \
   --full-sft \
   --no-ref \
-  --epochs 50 \
+  --epochs 100 \
   --learning-rate 3e-5 \
   --batch-size 8 \
   --grad-accum 4 \
-  --early-stopping-patience 8 \
+  --early-stopping-patience 10 \
   --eval-cer
 ```
 *Note: Uses `JointPlateauEarlyStoppingCallback` to monitor both `eval_loss` and `eval_cer` simultaneously, stopping only when both metrics have plateaued.*
 
-### 4. Synthesize Speech (`infer`)
-Direct Zero-Reference text-to-speech synthesis:
+---
 
+## Language Tiers & Data Requirements
+
+Fine-tuning data requirements depend on the language tier:
+
+### 🌟 Tier 1: Core Ghanaian Languages (Deeply Pre-tuned)
+- **Data Requirement:** **2 to 3 hours** (~1,000–1,500 clean clips).
+- Languages: `asante_twi`, `akuapem_twi`, `fante`, `ga`, `ewe`, `dagbani`, `dagaare`, `frafra`, `nzema`, `ahanta`, `sehwi`, `dangme`.
+
+### 🌍 Tier 2: Extended Languages + Ghanaian English
+- **Data Requirement:** **3 to 6 hours** (~1,500–3,000 clean clips).
+- Languages: `ghana_english` (English), `kusaal`, `mampruli`, `gonja`, `kasem`, `buli`, `konkomba`, `hausa`, `bimoba`, `chumburung`, `fulfulde`, `lelemi`, `nkonya`, `ntrubo`, `paasaal`, `sekpele`, `selee`, `sisaala`, `siwu`, `tampulma`, `tem`, `tuwuli`, `vagla`, `deg`, `avatime`, `bassar`, `birifor`, `bissa`, `gikyode`, `kabiye`, `konni`, `nawuri`, `anyin`.
+
+To inspect the full list from the command line:
 ```bash
-ghana-voice-trainer infer \
-  --model-path output/my-custom-model/final \
-  --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo." \
-  --lang twi \
-  --out-wav synthesized.wav
+ghana-voice list-langs
+ghana-voice list-langs --tier 1
+ghana-voice list-langs --tier 2
 ```
 
 ---

@@ -1,10 +1,15 @@
 """
-Main CLI entrypoint for ghana-voice-trainer.
+Main CLI entrypoint for ghana-voice.
 """
 
 import argparse
 import sys
-from .constants import get_language_info, TIER1_LANGUAGES, TIER2_LANGUAGES, DEFAULT_BASE_MODEL
+from .constants import (
+    get_language_info,
+    TIER1_LANGUAGES,
+    TIER2_LANGUAGES,
+    DEFAULT_BASE_MODEL,
+)
 
 
 def run_pipeline(args):
@@ -20,7 +25,7 @@ def run_pipeline(args):
     lang_info = get_language_info(args.lang)
 
     print("\n" + "=" * 60)
-    print(f"GHANA VOICE TRAINER: {lang_info['display'].upper()}")
+    print(f"GHANA VOICE: {lang_info['display'].upper()}")
     print(f"Tier {lang_info['tier']} Language (Recommended Audio: {lang_info['rec_hours']})")
     print("=" * 60)
 
@@ -46,7 +51,7 @@ def run_pipeline(args):
         encode_dataset(data_dir, batch_size=args.batch_size)
 
     print("\n" + "=" * 60)
-    print("STEP 3: LORA FINETUNING")
+    print("STEP 3: FINETUNING")
     print("=" * 60)
     train(
         data_dir=data_dir,
@@ -79,7 +84,7 @@ def run_pipeline(args):
 
 def print_languages_table(tier_filter=None):
     print("\n" + "=" * 70)
-    print("GHANA VOICE TRAINER: SUPPORTED LANGUAGES & TIER HIERARCHY")
+    print("GHANA VOICE: SUPPORTED LANGUAGES & TIER HIERARCHY")
     print("=" * 70)
     if tier_filter in (None, 1):
         print("\n🌟 TIER 1: Core Ghanaian Languages (Deeply tuned in Base Model)")
@@ -102,10 +107,21 @@ def print_languages_table(tier_filter=None):
 
 def main():
     parser = argparse.ArgumentParser(
-        prog="ghana-voice-trainer",
-        description="Finetuning toolkit for Neu-TTS Ghanaian speech models",
+        prog="ghana-voice",
+        description="Speech foundation models & fine-tuning toolkit for Ghanaian and African languages",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
+
+    # Command: speak (Inference management)
+    sub_speak = subparsers.add_parser("speak", help="Synthesize speech audio directly from text (Zero-Ref TTS)")
+    sub_speak.add_argument("--text", required=True, help="Text to speak")
+    sub_speak.add_argument("--lang", default="twi", help="Language identifier (e.g. twi, fat, ewe, gaa, eng, etc.)")
+    sub_speak.add_argument("--model", default=None, help="Model path or HF repo ID (defaults to auto-resolving)")
+    sub_speak.add_argument("--out", default="output.wav", help="Output WAV path")
+    sub_speak.add_argument("--ipa", action="store_true", help="Input is already IPA text")
+    sub_speak.add_argument("--temperature", type=float, default=0.7)
+    sub_speak.add_argument("--top-p", type=float, default=0.8)
+    sub_speak.add_argument("--top-k", type=int, default=50)
 
     # Command: list-langs
     sub_langs = subparsers.add_parser("list-langs", help="List all supported languages, tiers, and data requirements")
@@ -132,7 +148,7 @@ def main():
     sub_enc.add_argument("--batch-size", type=int, default=16)
 
     # Command: train
-    sub_train = subparsers.add_parser("train", help="Run finetuning (Full SFT or LoRA)")
+    sub_train = subparsers.add_parser("train", help="Run fine-tuning (Full SFT or LoRA)")
     sub_train.add_argument("--data-dir", required=True)
     sub_train.add_argument("--metadata", default="metadata_encoded.csv")
     sub_train.add_argument("--output-dir", default="output")
@@ -157,8 +173,8 @@ def main():
     sub_merge.add_argument("--adapter-path", required=True)
     sub_merge.add_argument("--output-dir", required=True)
 
-    # Command: infer
-    sub_infer = subparsers.add_parser("infer", help="Synthesize audio from text + reference")
+    # Command: infer (In-context voice cloning)
+    sub_infer = subparsers.add_parser("infer", help="Synthesize audio from text + reference audio")
     sub_infer.add_argument("--model-path", default=DEFAULT_BASE_MODEL)
     sub_infer.add_argument("--adapter-path", default="")
     sub_infer.add_argument("--text", required=True)
@@ -203,7 +219,18 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if args.command == "list-langs":
+    if args.command == "speak":
+        from .engine import GhanaVoice
+        engine = GhanaVoice(lang=args.lang, model=args.model)
+        engine.speak(
+            text=args.text,
+            output_file=args.out,
+            is_ipa=args.ipa,
+            temperature=args.temperature,
+            top_p=args.top_p,
+            top_k=args.top_k,
+        )
+    elif args.command == "list-langs":
         print_languages_table(args.tier)
     elif args.command == "prep":
         info = get_language_info(args.lang)

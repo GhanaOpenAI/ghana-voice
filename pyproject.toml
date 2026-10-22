@@ -3,16 +3,16 @@ requires = ["setuptools>=61.0"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "ghana-voice-trainer"
-version = "0.1.0"
-description = "Finetuning toolkit for Neu-TTS Ghanaian and African voice models"
+name = "ghana-voice"
+version = "0.2.0"
+description = "Text-to-speech foundation models and fine-tuning toolkit for Ghanaian and African languages"
 readme = "README.md"
 requires-python = ">=3.10"
 license = {text = "Apache-2.0"}
 authors = [
     {name = "GhanaOpenAI"}
 ]
-keywords = ["tts", "text-to-speech", "ghana", "africa", "vieneu-tts", "neu-tts", "voice-cloning"]
+keywords = ["tts", "text-to-speech", "ghana", "africa", "vieneu-tts", "neu-tts", "zero-ref", "voice-cloning"]
 dependencies = [
     "torch>=2.0.0",
     "torchaudio>=2.0.0",
@@ -32,8 +32,9 @@ dependencies = [
 ]
 
 [project.scripts]
-ghana-voice-trainer = "ghana_voice_trainer.cli:main"
+ghana-voice = "ghana_voice.cli:main"
+ghana-voice-trainer = "ghana_voice.cli:main"
 
 [tool.setuptools.packages.find]
 where = ["."]
-include = ["ghana_voice_trainer*"]
+include = ["ghana_voice*"]

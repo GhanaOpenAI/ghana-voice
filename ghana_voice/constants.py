@@ -5,7 +5,8 @@ Global constants, Tier hierarchies, and default parameters for ghana-voice-train
 import string
 
 # Canonical foundation model on Hugging Face
-DEFAULT_BASE_MODEL = "ghanaopenai/neu-tts-ghana-base"
+DEFAULT_BASE_MODEL = "ghanaopenai/ghana-voice-base"
+LANG_MODEL_PREFIX = "ghanaopenai/ghana-voice_"
 
 # NeuCodec parameters
 NEUCODEC_REPO = "neuphonic/neucodec"
