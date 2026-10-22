@@ -4,7 +4,7 @@ Main CLI entrypoint for ghana-voice-trainer.
 
 import argparse
 import sys
-from .constants import get_language_info, TIER1_LANGUAGES, TIER2_LANGUAGES
+from .constants import get_language_info, TIER1_LANGUAGES, TIER2_LANGUAGES, DEFAULT_BASE_MODEL
 
 
 def run_pipeline(args):
