@@ -4,6 +4,7 @@ Main CLI entrypoint for ghana-voice-trainer.
 
 import argparse
 import sys
+from .constants import get_language_info, TIER1_LANGUAGES, TIER2_LANGUAGES
 
 
 def run_pipeline(args):
@@ -16,6 +17,12 @@ def run_pipeline(args):
 
     data_dir = args.data_dir
     os.makedirs(data_dir, exist_ok=True)
+    lang_info = get_language_info(args.lang)
+
+    print("\n" + "=" * 60)
+    print(f"GHANA VOICE TRAINER: {lang_info['display'].upper()}")
+    print(f"Tier {lang_info['tier']} Language (Recommended Audio: {lang_info['rec_hours']})")
+    print("=" * 60)
 
     print("\n" + "=" * 60)
     print("STEP 1: PREPARING DATASET")
@@ -70,12 +77,39 @@ def run_pipeline(args):
     print("=" * 60)
 
 
+def print_languages_table(tier_filter=None):
+    print("\n" + "=" * 70)
+    print("GHANA VOICE TRAINER: SUPPORTED LANGUAGES & TIER HIERARCHY")
+    print("=" * 70)
+    if tier_filter in (None, 1):
+        print("\n🌟 TIER 1: Core Ghanaian Languages (Deeply tuned in Base Model)")
+        print("   Recommended fine-tuning data: 2 to 3 hours (~1,000–1,500 clips)")
+        print("-" * 70)
+        print(f"   {'Identifier':16s} | {'Display Name':20s} | {'ISO':6s} | {'Family':12s}")
+        print("-" * 70)
+        for k, v in TIER1_LANGUAGES.items():
+            print(f"   {k:16s} | {v['display']:20s} | {v['iso']:6s} | {v['family']:12s}")
+    if tier_filter in (None, 2):
+        print("\n🌍 TIER 2: Extended Ghanaian & Regional African Languages + Ghanaian English")
+        print("   Recommended fine-tuning data: 3 to 6 hours (~1,500–3,000 clips)")
+        print("-" * 70)
+        print(f"   {'Identifier':16s} | {'Display Name':20s} | {'ISO':6s} | {'Family':12s}")
+        print("-" * 70)
+        for k, v in TIER2_LANGUAGES.items():
+            print(f"   {k:16s} | {v['display']:20s} | {v['iso']:6s} | {v['family']:12s}")
+    print("=" * 70 + "\n")
+
+
 def main():
     parser = argparse.ArgumentParser(
         prog="ghana-voice-trainer",
         description="Finetuning toolkit for Neu-TTS Ghanaian speech models",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
+
+    # Command: list-langs
+    sub_langs = subparsers.add_parser("list-langs", help="List all supported languages, tiers, and data requirements")
+    sub_langs.add_argument("--tier", type=int, choices=[1, 2], default=None, help="Filter by Tier 1 or Tier 2")
 
     # Command: prep
     sub_prep = subparsers.add_parser("prep", help="Prepare audio and phonemes")
@@ -103,7 +137,7 @@ def main():
     sub_train.add_argument("--metadata", default="metadata_encoded.csv")
     sub_train.add_argument("--output-dir", default="output")
     sub_train.add_argument("--run-name", required=True)
-    sub_train.add_argument("--base-model", default="pnnbao-ump/VieNeu-TTS-0.3B")
+    sub_train.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100%% of parameters (Full SFT, no LoRA)")
     sub_train.add_argument("--epochs", type=int, default=50)
     sub_train.add_argument("--learning-rate", type=float, default=3e-5)
@@ -119,13 +153,13 @@ def main():
 
     # Command: merge
     sub_merge = subparsers.add_parser("merge", help="Merge LoRA adapter into base model")
-    sub_merge.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
+    sub_merge.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_merge.add_argument("--adapter-path", required=True)
     sub_merge.add_argument("--output-dir", required=True)
 
     # Command: infer
     sub_infer = subparsers.add_parser("infer", help="Synthesize audio from text + reference")
-    sub_infer.add_argument("--model-path", default="ghanaopenai/neu-tts-ghana-base")
+    sub_infer.add_argument("--model-path", default=DEFAULT_BASE_MODEL)
     sub_infer.add_argument("--adapter-path", default="")
     sub_infer.add_argument("--text", required=True)
     sub_infer.add_argument("--lang", default="twi")
@@ -136,7 +170,7 @@ def main():
     # Command: eval
     sub_eval = subparsers.add_parser("eval", help="Evaluate checkpoint CER with OmniASR 300M")
     sub_eval.add_argument("--checkpoint", required=True)
-    sub_eval.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
+    sub_eval.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_eval.add_argument("--asr-model", default="/mnt/volume_d2wey28/models/sherpa/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-2026-02-05/model.onnx")
     sub_eval.add_argument("--asr-tokens", default="/mnt/volume_d2wey28/models/sherpa/sherpa-onnx-omnilingual-asr-1600-languages-300M-ctc-v2-2026-02-05/tokens.txt")
     sub_eval.add_argument("--out-dir", default="eval_samples")
@@ -151,7 +185,7 @@ def main():
     sub_run.add_argument("--hf-repo", default="")
     sub_run.add_argument("--subset", default="")
     sub_run.add_argument("--split", default="train")
-    sub_run.add_argument("--base-model", default="ghanaopenai/neu-tts-ghana-base")
+    sub_run.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_run.add_argument("--output-dir", default="output")
     sub_run.add_argument("--epochs", type=int, default=20)
     sub_run.add_argument("--learning-rate", type=float, default=5e-5)
@@ -169,7 +203,11 @@ def main():
         parser.print_help()
         sys.exit(1)
 
-    if args.command == "prep":
+    if args.command == "list-langs":
+        print_languages_table(args.tier)
+    elif args.command == "prep":
+        info = get_language_info(args.lang)
+        print(f"\n[Language Info] {info['display']} | Tier {info['tier']} (Target data: {info['rec_hours']})")
         from .prep import prep_local_folder, prep_hf_dataset
         if args.hf_repo:
             prep_hf_dataset(args.hf_repo, args.subset, args.split, args.out_dir, args.lang,
