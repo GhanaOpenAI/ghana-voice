@@ -173,7 +173,7 @@ def main():
     sub_train.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100%% of parameters (Full SFT, no LoRA)")
     sub_train.add_argument("--epochs", type=int, default=50)
-    sub_train.add_argument("--learning-rate", type=float, default=3e-5)
+    sub_train.add_argument("--learning-rate", type=float, default=5e-5)
     sub_train.add_argument("--batch-size", type=int, default=8)
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)

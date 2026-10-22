@@ -311,11 +311,11 @@ def build_dynamic_collator(pad_token_id: int):
 
 
 def train(data_dir: str, output_dir: str, run_name: str,
-          base_model: str = "pnnbao-ump/VieNeu-TTS-0.3B",
+          base_model: str = DEFAULT_BASE_MODEL,
           metadata_file: str = "metadata_encoded.csv",
           no_ref: bool = True,
           full_sft: bool = False,
-          epochs: int = 50, learning_rate: float = 3e-5,
+          epochs: int = 50, learning_rate: float = 5e-5,
           batch_size: int = 8, grad_accum: int = 4,
           eval_fraction: float = 0.05, early_stopping_patience: int = 10,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
