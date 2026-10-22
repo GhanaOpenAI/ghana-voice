@@ -1,7 +1,10 @@
 """
 Canonical language-specific test prompts for synthesizing diverse, natural speech.
-Every language has multiple native sentences (greetings, everyday dialogue, questions, proverbs).
+Includes curated conversational phrases for major languages and an automatic
+held-out evaluation extractor for all 45+ Ghanaian languages.
 """
+
+from pathlib import Path
 
 LANGUAGE_SAMPLE_PROMPTS = {
     "asante_twi": [
@@ -97,10 +100,44 @@ LANGUAGE_SAMPLE_PROMPTS = {
 }
 
 
-def get_prompts_for_language(lang_name: str):
-    """Retrieve language-specific prompts, falling back to Twi if unknown."""
+def get_prompts_for_language(lang_name: str, dataset_dir: str = None):
+    """
+    Retrieve language-specific prompts.
+    First checks curated conversational phrases.
+    If not found, dynamically pulls held-out test sentences directly from the language's clean dataset.
+    """
     cleaned = lang_name.lower().strip()
     for k, v in LANGUAGE_SAMPLE_PROMPTS.items():
         if k in cleaned or cleaned in k:
             return v
+
+    # Fallback to dynamic held-out sentences from dataset
+    candidate_paths = [
+        Path(f"/mnt/volume_d2wey28/projects/vieneu-ghana/dataset_10h/{cleaned}/metadata_encoded.csv"),
+        Path(f"/mnt/volume_d2wey28/projects/vieneu-ghana/dataset_languages/{cleaned}/metadata_encoded.csv"),
+    ]
+    if dataset_dir:
+        candidate_paths.insert(0, Path(dataset_dir) / "metadata_encoded.csv")
+
+    for p in candidate_paths:
+        if p.exists():
+            try:
+                with open(p, "r", encoding="utf-8") as f:
+                    lines = [line.strip() for line in f if line.strip()]
+                # Grab 6 diverse sentences from the validation tail
+                extracted = []
+                tail = lines[-30:]  # last 30 lines
+                step = max(1, len(tail) // 6)
+                for i in range(0, min(len(tail), 6 * step), step):
+                    parts = tail[i].split("|")
+                    if len(parts) >= 2:
+                        ipa_text = parts[1].strip()
+                        extracted.append((f"0{len(extracted)+1}_eval", ipa_text))
+                    if len(extracted) >= 6:
+                        break
+                if extracted:
+                    return extracted
+            except Exception:
+                pass
+
     return LANGUAGE_SAMPLE_PROMPTS["asante_twi"]
