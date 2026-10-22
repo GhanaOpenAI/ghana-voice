@@ -96,7 +96,7 @@ def print_languages_table(tier_filter=None):
             print(f"   {k:16s} | {v['display']:20s} | {v['iso']:6s} | {v['family']:12s}")
     if tier_filter in (None, 2):
         print("\n🌍 TIER 2: Extended Ghanaian & Regional African Languages + Ghanaian English")
-        print("   Recommended fine-tuning data: 3 to 6 hours (~1,500–3,000 clips)")
+        print("   Recommended fine-tuning data: 3 to 6 hours (~1,000–3,000 clips)")
         print("-" * 70)
         print(f"   {'Identifier':16s} | {'Display Name':20s} | {'ISO':6s} | {'Family':12s}")
         print("-" * 70)
@@ -108,20 +108,37 @@ def print_languages_table(tier_filter=None):
 def main():
     parser = argparse.ArgumentParser(
         prog="ghana-voice",
-        description="Speech foundation models & fine-tuning toolkit for Ghanaian and African languages",
+        description="Speech foundation models, inference & fine-tuning toolkit for Ghanaian & African languages",
     )
     subparsers = parser.add_subparsers(dest="command", help="Available subcommands")
 
-    # Command: speak (Inference management)
+    # Command: speak (CLI Inference)
     sub_speak = subparsers.add_parser("speak", help="Synthesize speech audio directly from text (Zero-Ref TTS)")
     sub_speak.add_argument("--text", required=True, help="Text to speak")
     sub_speak.add_argument("--lang", default="twi", help="Language identifier (e.g. twi, fat, ewe, gaa, eng, etc.)")
     sub_speak.add_argument("--model", default=None, help="Model path or HF repo ID (defaults to auto-resolving)")
     sub_speak.add_argument("--out", default="output.wav", help="Output WAV path")
+    sub_speak.add_argument("--device", default=None, help="Device to run on ('cpu' or 'cuda')")
     sub_speak.add_argument("--ipa", action="store_true", help="Input is already IPA text")
     sub_speak.add_argument("--temperature", type=float, default=0.7)
     sub_speak.add_argument("--top-p", type=float, default=0.8)
     sub_speak.add_argument("--top-k", type=int, default=50)
+
+    # Command: web (Web UI)
+    sub_web = subparsers.add_parser("web", help="Launch interactive Gradio Web UI for voice synthesis")
+    sub_web.add_argument("--port", type=int, default=7860, help="Web server port")
+    sub_web.add_argument("--share", action="store_true", default=False, help="Create a public shareable link")
+
+    # Command: serve (REST API)
+    sub_serve = subparsers.add_parser("serve", help="Launch OpenAI-compatible REST API server")
+    sub_serve.add_argument("--host", default="0.0.0.0", help="Host address")
+    sub_serve.add_argument("--port", type=int, default=8000, help="Port")
+
+    # Command: export-gguf (GGUF Export)
+    sub_gguf = subparsers.add_parser("export-gguf", help="Export PyTorch model to GGUF format and quantize for CPU")
+    sub_gguf.add_argument("--model-dir", required=True, help="Directory containing PyTorch model weights")
+    sub_gguf.add_argument("--out-dir", required=True, help="Output directory for GGUF files")
+    sub_gguf.add_argument("--quant", nargs="+", default=["Q4_K_M", "Q8_0"], help="Quantization types")
 
     # Command: list-langs
     sub_langs = subparsers.add_parser("list-langs", help="List all supported languages, tiers, and data requirements")
@@ -221,7 +238,7 @@ def main():
 
     if args.command == "speak":
         from .engine import GhanaVoice
-        engine = GhanaVoice(lang=args.lang, model=args.model)
+        engine = GhanaVoice(lang=args.lang, model=args.model, device=args.device)
         engine.speak(
             text=args.text,
             output_file=args.out,
@@ -230,6 +247,15 @@ def main():
             top_p=args.top_p,
             top_k=args.top_k,
         )
+    elif args.command == "web":
+        from .web import launch_web
+        launch_web(port=args.port, share=args.share)
+    elif args.command == "serve":
+        from .server import start_server
+        start_server(host=args.host, port=args.port)
+    elif args.command == "export-gguf":
+        from .export import export_to_gguf
+        export_to_gguf(args.model_dir, args.out_dir, quant_types=args.quant)
     elif args.command == "list-langs":
         print_languages_table(args.tier)
     elif args.command == "prep":
