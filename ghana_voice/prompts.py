@@ -147,12 +147,16 @@ def generate_samples_for_language(
     model_dir: str,
     lang_name: str,
     out_dir: str,
+    gguf_path: str = None,
     device: str = "cuda:0",
     count: int = 3,
 ):
     """
-    Synthesize authentic evaluation audio samples from a newly fine-tuned model checkpoint.
+    Synthesize authentic evaluation audio samples in BOTH formats:
+    1. PyTorch (GPU / CUDA)
+    2. GGUF Q8_0 (CPU / llama.cpp)
     """
+    import os
     from pathlib import Path
     import soundfile as sf
     from .engine import GhanaVoice
@@ -162,17 +166,50 @@ def generate_samples_for_language(
     out_path.mkdir(parents=True, exist_ok=True)
 
     prompts = get_prompts_for_language(lang_name)
-    print(f"[Sample Generator] Synthesizing {min(count, len(prompts))} samples from {model_dir} for {lang_name}...")
+    n_samples = min(count, len(prompts))
+    print(f"[Sample Generator] Synthesizing {n_samples} benchmark samples from {model_dir} for {lang_name}...")
 
-    engine = GhanaVoice(lang=lang_name, model=model_dir, device=device)
+    # 1. PyTorch GPU Synthesis
+    try:
+        print("[Sample Generator] Loading PyTorch model on GPU ...")
+        engine_pt = GhanaVoice(lang=lang_name, model=model_dir, device=device)
+        for tag, text in prompts[:count]:
+            print(f"  PyTorch GPU [{tag}]: {text}")
+            wav_pt = engine_pt.synthesize(text, temperature=0.7, top_p=0.8, top_k=50, repetition_penalty=1.0)
+            sf.write(str(out_path / f"sample_{tag}_pytorch.wav"), wav_pt, SAMPLE_RATE_24K)
+    except Exception as e:
+        print(f"  Warning during PyTorch synthesis: {e}")
 
-    for tag, text in prompts[:count]:
+    # 2. GGUF Q8_0 CPU Synthesis
+    # Locate GGUF Q8_0 file if not explicitly given
+    if not gguf_path:
+        m_path = Path(model_dir)
+        candidates = [
+            m_path.parent / "gguf" / f"ghana-voice_{lang_name}-Q8_0.gguf",
+            m_path.parent / "gguf" / f"{m_path.name}-Q8_0.gguf",
+            m_path / f"ghana-voice_{lang_name}-Q8_0.gguf",
+        ]
+        for c in candidates:
+            if c.exists():
+                gguf_path = str(c)
+                break
+
+    if gguf_path and os.path.exists(gguf_path):
         try:
-            print(f"  Synthesizing [{tag}]: {text}")
-            wav = engine.synthesize(text, temperature=0.7, top_p=0.8, top_k=50, repetition_penalty=1.0)
-            sample_file = out_path / f"sample_{tag}.wav"
-            sf.write(str(sample_file), wav, SAMPLE_RATE_24K)
-            print(f"  Saved sample: {sample_file} ({len(wav)/SAMPLE_RATE_24K:.2f}s)")
+            print(f"[Sample Generator] Loading GGUF Q8_0 model on CPU: {gguf_path} ...")
+            engine_gg = GhanaVoice(lang=lang_name, model=gguf_path, device="cpu", gguf_type="Q8_0")
+            for tag, text in prompts[:count]:
+                print(f"  GGUF Q8_0 CPU [{tag}]: {text}")
+                wav_gg = engine_gg.synthesize(text, temperature=0.7, top_p=0.8, top_k=50, repetition_penalty=1.0)
+                sf.write(str(out_path / f"sample_{tag}_gguf_q8.wav"), wav_gg, SAMPLE_RATE_24K)
         except Exception as e:
-            print(f"  Warning: failed to synthesize sample {tag}: {e}")
+            print(f"  Warning during GGUF synthesis: {e}")
+
+    # Also save standard sample_01.wav aliases pointing to pytorch
+    for tag, _ in prompts[:count]:
+        pt_f = out_path / f"sample_{tag}_pytorch.wav"
+        st_f = out_path / f"sample_{tag}.wav"
+        if pt_f.exists() and not st_f.exists():
+            import shutil
+            shutil.copy(str(pt_f), str(st_f))
 
