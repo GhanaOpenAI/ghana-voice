@@ -41,9 +41,9 @@ echo "CPU Format : GGUF Q8_0 (standard high-precision)"
 echo "Time       : $(date)"
 echo "============================================================"
 
-for LANG in "${LANGUAGES[@]}"; do
-    DATA_DIR="$LANG_DATA_BASE/$LANG"
-    RUN_NAME="ghana-voice_$LANG"
+for TARGET_LANG in "${LANGUAGES[@]}"; do
+    DATA_DIR="$LANG_DATA_BASE/$TARGET_LANG"
+    RUN_NAME="ghana-voice_$TARGET_LANG"
     RUN_DIR="$OUT_BASE/$RUN_NAME"
     ADAPTER_DIR="$RUN_DIR/final"
     MERGED_DIR="$RUN_DIR/merged"
@@ -52,13 +52,13 @@ for LANG in "${LANGUAGES[@]}"; do
 
     # Wait for dataset builder if needed
     while [ ! -f "$DATA_DIR/metadata_encoded.csv" ]; do
-        echo "[Waiting] $LANG dataset encoding not complete yet ($DATA_DIR). Checking in 30s..."
+        echo "[Waiting] $TARGET_LANG dataset encoding not complete yet ($DATA_DIR). Checking in 30s..."
         sleep 30
     done
 
     echo ""
     echo "============================================================"
-    echo "Processing Language: $LANG"
+    echo "Processing Language: $TARGET_LANG"
     echo "Data: $DATA_DIR ($(wc -l < "$DATA_DIR/metadata_encoded.csv") clips)"
     echo "============================================================"
 
@@ -101,15 +101,11 @@ for LANG in "${LANGUAGES[@]}"; do
     if [ ! -f "$GGUF_DIR/${RUN_NAME}-Q8_0.gguf" ]; then
         echo "[3/5] Exporting standard GGUF Q8_0 CPU model for $RUN_NAME ..."
         mkdir -p "$GGUF_DIR"
-        python3 -c "
-from ghana_voice.export import export_to_gguf
-export_to_gguf(
-    model_dir=,
-    out_dir=,
-    name=,
-    quant_types=[Q8_0]
-)
-"
+        ghana-voice export-gguf \
+            --model-dir "$MERGED_DIR" \
+            --out-dir "$GGUF_DIR" \
+            --name "$RUN_NAME" \
+            --quant Q8_0
     else
         echo "[3/5] GGUF Q8_0 already exported, skipping."
     fi
@@ -120,10 +116,10 @@ export_to_gguf(
     python3 -c "
 from ghana_voice.prompts import generate_samples_for_language
 generate_samples_for_language(
-    model_dir=,
-    lang_name=en_US.UTF-8,
-    out_dir=,
-    device=cuda:0,
+    model_dir='$MERGED_DIR',
+    lang_name='$TARGET_LANG',
+    out_dir='$SAMPLE_DIR',
+    device='cuda:0',
     count=3
 )
 " || echo "Sample generation done."
