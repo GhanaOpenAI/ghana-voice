@@ -141,3 +141,38 @@ def get_prompts_for_language(lang_name: str, dataset_dir: str = None):
                 pass
 
     return LANGUAGE_SAMPLE_PROMPTS["asante_twi"]
+
+
+def generate_samples_for_language(
+    model_dir: str,
+    lang_name: str,
+    out_dir: str,
+    device: str = "cuda:0",
+    count: int = 3,
+):
+    """
+    Synthesize authentic evaluation audio samples from a newly fine-tuned model checkpoint.
+    """
+    from pathlib import Path
+    import soundfile as sf
+    from .engine import GhanaVoice
+    from .constants import SAMPLE_RATE_24K
+
+    out_path = Path(out_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+
+    prompts = get_prompts_for_language(lang_name)
+    print(f"[Sample Generator] Synthesizing {min(count, len(prompts))} samples from {model_dir} for {lang_name}...")
+
+    engine = GhanaVoice(lang=lang_name, model=model_dir, device=device)
+
+    for tag, text in prompts[:count]:
+        try:
+            print(f"  Synthesizing [{tag}]: {text}")
+            wav = engine.synthesize(text, temperature=0.7, top_p=0.8, top_k=50, repetition_penalty=1.0)
+            sample_file = out_path / f"sample_{tag}.wav"
+            sf.write(str(sample_file), wav, SAMPLE_RATE_24K)
+            print(f"  Saved sample: {sample_file} ({len(wav)/SAMPLE_RATE_24K:.2f}s)")
+        except Exception as e:
+            print(f"  Warning: failed to synthesize sample {tag}: {e}")
+
