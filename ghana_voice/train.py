@@ -315,13 +315,13 @@ def train(data_dir: str, output_dir: str, run_name: str,
           metadata_file: str = "metadata_encoded.csv",
           no_ref: bool = True,
           full_sft: bool = False,
-          epochs: int = 50, learning_rate: float = 5e-5,
+          epochs: int = 100, learning_rate: float = 5e-5,
           batch_size: int = 8, grad_accum: int = 4,
-          eval_fraction: float = 0.05, early_stopping_patience: int = 10,
+          eval_fraction: float = 0.05, early_stopping_patience: int = 12,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
           lora_r: int = 16, lora_alpha: int = 32, lora_dropout: float = 0.05,
           max_len: int = 4096, seed: int = 42,
-          eval_cer: bool = True, asr_model: str = _ASR_MODEL_DEFAULT, asr_tokens: str = _ASR_TOKENS_DEFAULT):
+          eval_cer: bool = False, asr_model: str = _ASR_MODEL_DEFAULT, asr_tokens: str = _ASR_TOKENS_DEFAULT):
 
     from transformers import (
         AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
@@ -557,13 +557,15 @@ def train(data_dir: str, output_dir: str, run_name: str,
                 eval_samples.append({"chat": chat, "text": txt})
 
             callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
+            callbacks.append(JointPlateauEarlyStoppingCallback(
+                patience=early_stopping_patience,
+                min_loss_delta=0.005,
+                min_cer_delta=0.005,
+            ))
             print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences, no_ref={no_ref}).")
-
-        callbacks.append(JointPlateauEarlyStoppingCallback(
-            patience=early_stopping_patience,
-            min_loss_delta=0.005,
-            min_cer_delta=0.005,
-        ))
+        else:
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
+            print(f"Registered EarlyStoppingCallback on eval_loss (patience={early_stopping_patience}).")
 
     trainer = Trainer(
         model=model,

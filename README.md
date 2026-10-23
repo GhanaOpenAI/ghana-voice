@@ -132,8 +132,9 @@ ghana-voice train \
 ghana-voice export-gguf \
   --model-dir output/my-twi-model/final \
   --out-dir output/my-twi-model/gguf \
-  --quant Q4_K_M Q8_0
+  --quant Q8_0
 ```
+> **Note on CPU Quantization**: Ghana Voice defaults exclusively to **GGUF Q8_0 (8-bit)** on CPU. Q8_0 preserves near-lossless discrete acoustic token logits without the quality degradation and acoustic artifacts found in 4-bit quantizations.
 
 ---
 

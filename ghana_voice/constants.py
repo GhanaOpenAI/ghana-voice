@@ -25,10 +25,10 @@ TOKEN_SPEECH_END = "<|SPEECH_GENERATION_END|>"
 MAX_REF_CODES = 200
 
 # Recommended generation parameters
-DEFAULT_TEMPERATURE = 0.4
+DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 0.8
 DEFAULT_TOP_K = 50
-DEFAULT_REPETITION_PENALTY = 1.2
+DEFAULT_REPETITION_PENALTY = 1.0
 
 # Punctuation character sets for cleaning reference prompts
 PUNCT_SET = set(string.punctuation) | set("“”‘’–—…«»")

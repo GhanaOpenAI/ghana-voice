@@ -50,7 +50,7 @@ class GhanaVoice:
         model: Optional[str] = None,
         device: Optional[str] = None,
         use_gguf: Optional[bool] = None,
-        gguf_type: str = "Q4_K_M",
+        gguf_type: str = "Q8_0",
         torch_dtype: torch.dtype = torch.bfloat16,
     ):
         self.lang = lang
@@ -149,7 +149,13 @@ class GhanaVoice:
                 gguf_path = hf_hub_download(repo_id=DEFAULT_BASE_MODEL, filename=fallback_name)
 
         print(f"[GhanaVoice] Loading GGUF weights on CPU: {gguf_path}")
-        self.llm = Llama(model_path=gguf_path, n_ctx=2048, n_gpu_layers=0, verbose=False)
+        self.llm = Llama(
+            model_path=gguf_path,
+            n_ctx=2048,
+            n_gpu_layers=0,
+            rope_freq_base=10000.0,
+            verbose=False,
+        )
 
         # Load NeuCodec ONNX decoder for lightweight CPU synthesis if available
         try:
@@ -198,6 +204,7 @@ class GhanaVoice:
                 temp=temperature,
                 top_p=top_p,
                 top_k=top_k,
+                min_p=0.0,
                 repeat_penalty=repetition_penalty,
             ):
                 if tid == self.speech_end_id or tid == self.tokenizer.eos_token_id:
