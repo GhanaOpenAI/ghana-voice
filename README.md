@@ -23,9 +23,10 @@ When fine-tuning from `ghanaopenai/ghana-voice-base` to create dedicated languag
    - Always fine-tune with **LoRA (r=16, alpha=32)**.
    - Freezes 100% of the base model weights and trains only **6.4M adapter parameters (2.56%)**.
    - Preserves foundation phonetic stability while specializing dialect timbre and tone contours.
-3. **Voice Conversion Option (Africa Female VC)**:
-   - Users can choose to train on **Real Human Speech as it is** (default).
-   - Or apply any of **21 African female voices** (e.g., `clear-high-slow` for native Twi female voice, `warm-high` for Hausa, `bright-high` for Yoruba) via `--vc-voice <voice_name>`.
+3. **Unified Single-Speaker Voice Conversion (Africa Female VC)**:
+   - All language fine-tuning uses a consistent single-speaker voice persona to guarantee crisp, expressive, non-robotic zero-reference synthesis.
+   - Users choose from **21 African female voices** (e.g., `clear-high-slow` for native Twi female voice, `warm-high` for Hausa, `bright-high` for Yoruba) via `--vc-voice <voice_name>` (default: `clear-high-slow`).
+   - The pipeline converts both the native language speech and the Ghanaian English reference speech into the identical target persona for seamless bilingual code-switching.
 
 To inspect all 21 available target voices from the command line:
 ```bash
@@ -88,18 +89,10 @@ ghana-voice serve --port 8000
 
 ### 1. Prepare Dataset (`prep`)
 ```bash
-# Real human speech mode (zero voice conversion):
+# Convert input audio into the target studio voice persona (e.g. clear-high-slow):
 ghana-voice prep \
   --input-dir path/to/recordings \
-  --out-dir datasets/my_data \
-  --lang twi \
-  --min-dur 3.0 \
-  --max-dur 15.0
-
-# Or apply a specific voice persona from africa-female-vc:
-ghana-voice prep \
-  --input-dir path/to/recordings \
-  --out-dir datasets/my_data_female \
+  --out-dir datasets/my_data_studio \
   --lang twi \
   --vc-voice clear-high-slow
 ```
