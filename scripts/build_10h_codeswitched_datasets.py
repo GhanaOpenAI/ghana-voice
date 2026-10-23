@@ -81,22 +81,30 @@ REAL_LANGUAGE_SOURCES = [
     {
         "name": "ahanta",
         "iso": "aha",
-        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Ahanta_aha"],
+        "dirs": [
+            "/mnt/volume_d2wey28/hf_datasets/ghana-speech-eval/jw_ahanta_aha",
+            "/mnt/volume_d2wey28/hf_cache/hub/datasets--AfriSpeech--african-speech-public_v1/snapshots/b814069f6aeddfc823df246b43cc3d5e4ea46005/ahanta_aha",
+            "/mnt/volume_d2wey28/data/ghana-speech/Ahanta_aha"
+        ],
     },
     {
         "name": "sehwi",
         "iso": "sfw",
-        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Sehwi_sfw"],
+        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Sehwi_sfw", "/mnt/volume_d2wey28/hf_datasets/ghana-speech-eval/jw_sehwi_sfw"],
     },
     {
         "name": "dangme",
         "iso": "ada",
-        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Dangme_ada"],
+        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Dangme_ada", "/mnt/volume_d2wey28/hf_datasets/ghana-speech-eval/jw_dangme_ada"],
     },
     {
         "name": "ga",
         "iso": "gaa",
-        "dirs": ["/mnt/volume_d2wey28/data/ghana-speech/Ga_gaa"],
+        "dirs": [
+            "/mnt/volume_d2wey28/hf_datasets/ghana-speech-eval/jw_ga_gaa",
+            "/mnt/volume_d2wey28/hf_datasets/ghana-speech-eval/finance_ga",
+            "/mnt/volume_d2wey28/data/ghana-speech/Ga_gaa"
+        ],
     },
     {
         "name": "kusaal",
@@ -336,9 +344,11 @@ def build_language_dataset(item, english_pool, codec, args):
             except Exception:
                 continue
 
-            texts = t["text"].to_pylist()
-            durs = t["duration"].to_pylist() if "duration" in t.column_names else [None] * len(texts)
-            audios = t["audio"].to_pylist()
+            text_col = "text" if "text" in t.column_names else ("transcript" if "transcript" in t.column_names else "transcription")
+            dur_col = "duration" if "duration" in t.column_names else ("length" if "length" in t.column_names else None)
+            texts = t[text_col].to_pylist() if text_col in t.column_names else []
+            durs = t[dur_col].to_pylist() if dur_col else [None] * len(texts)
+            audios = t["audio"].to_pylist() if "audio" in t.column_names else []
 
             for text, dur, audio_obj in zip(texts, durs, audios):
                 if total_lang_dur >= RAW_LANG_TARGET:
