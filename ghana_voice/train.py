@@ -521,11 +521,23 @@ def train(data_dir: str, output_dir: str, run_name: str,
                 detected_lang = "eng"
             else:
                 detected_lang = "twi"
+            # An exact language-name prefix (e.g. "bissa_00001.wav") overrides the guesses above.
+            from .constants import ALL_SUPPORTED_LANGUAGES
+            for name in sorted(ALL_SUPPORTED_LANGUAGES, key=len, reverse=True):
+                if first_fn.startswith(name + "_"):
+                    detected_lang = ALL_SUPPORTED_LANGUAGES[name]["iso"]
+                    break
 
-            test_texts = CANONICAL_TESTS.get(detected_lang, [
-                "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
-                "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
-            ])
+            # Held-out sentences shipped with the dataset take precedence over the built-in ones.
+            cer_file = os.path.join(data_dir, "cer_sentences.txt")
+            if os.path.exists(cer_file):
+                with open(cer_file, "r", encoding="utf-8") as f:
+                    test_texts = [ln.strip() for ln in f if ln.strip()]
+            else:
+                test_texts = CANONICAL_TESTS.get(detected_lang, [
+                    "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
+                    "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
+                ])
 
             eval_samples = []
             from africa_g2p import AfricaPipeline
