@@ -143,9 +143,10 @@ ghana-voice train \
   --eval-fraction 0.03 \
   --eval-steps 80 \
   --save-steps 80 \
-  --early-stopping-patience 10 \
-  --eval-cer
+  --early-stopping-patience 10
 ```
+Early stopping and the released checkpoint follow eval loss. `--eval-cer` adds an OmniASR CER check,
+but it is only meaningful for languages the ASR model reads well (e.g. Twi).
 
 ### 4. Export GGUF for CPU (`export-gguf`)
 ```bash
