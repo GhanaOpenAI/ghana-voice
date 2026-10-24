@@ -70,7 +70,17 @@ class GhanaVoice:
         print(f"[GhanaVoice] Language: {self.lang_info['display']} ({self.iso}) | Model: {self.model_id} | Device: {self.device}")
 
         # Always load the HF tokenizer for accurate token encoding
-        self.tokenizer = AutoTokenizer.from_pretrained(self.model_id, trust_remote_code=True)
+        tok_source = self.model_id
+        if os.path.isfile(str(tok_source)) and str(tok_source).endswith(".gguf"):
+            parent = os.path.dirname(str(tok_source))
+            merged = os.path.join(os.path.dirname(parent), "merged")
+            if os.path.exists(os.path.join(parent, "tokenizer.json")):
+                tok_source = parent
+            elif os.path.exists(os.path.join(merged, "tokenizer.json")):
+                tok_source = merged
+            else:
+                tok_source = DEFAULT_BASE_MODEL
+        self.tokenizer = AutoTokenizer.from_pretrained(tok_source, trust_remote_code=True)
         self.speech_end_id = self.tokenizer.convert_tokens_to_ids(TOKEN_SPEECH_END)
 
         # Initialize AfricaPipeline for word-separated IPA

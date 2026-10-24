@@ -24,11 +24,11 @@ TOKEN_SPEECH_END = "<|SPEECH_GENERATION_END|>"
 # Maximum reference codes in prompt (~4 seconds of reference speech @ 50 Hz)
 MAX_REF_CODES = 200
 
-# Recommended generation parameters
+# Recommended generation parameters (exact values that produced samples_10h_lora)
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 0.8
 DEFAULT_TOP_K = 50
-DEFAULT_REPETITION_PENALTY = 1.15
+DEFAULT_REPETITION_PENALTY = 1.05
 
 # Punctuation character sets for cleaning reference prompts
 PUNCT_SET = set(string.punctuation) | set("“”‘’–—…«»")
