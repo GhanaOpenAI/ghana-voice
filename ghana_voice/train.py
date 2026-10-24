@@ -496,16 +496,17 @@ def train(data_dir: str, output_dir: str, run_name: str,
             detected_lang = "twi"
             if any(k in first_fn for k in ["asante", "akuapem", "twi"]):
                 detected_lang = "twi"
+            # Dagaare before Dagbani and Ga: 'dagaare' contains both 'dag' and 'ga'.
+            elif any(k in first_fn for k in ["dga", "dagaare"]):
+                detected_lang = "dga"
+            elif "dag" in first_fn:
+                detected_lang = "dag"
             elif any(k in first_fn for k in ["gaa", "ga"]):
                 detected_lang = "gaa"
             elif "ewe" in first_fn:
                 detected_lang = "ewe"
             elif any(k in first_fn for k in ["fat", "fante"]):
                 detected_lang = "fat"
-            elif "dag" in first_fn:
-                detected_lang = "dag"
-            elif any(k in first_fn for k in ["dga", "dagaare"]):
-                detected_lang = "dga"
             elif any(k in first_fn for k in ["gur", "frafra"]):
                 detected_lang = "gur"
             elif any(k in first_fn for k in ["nzi", "nzema"]):
