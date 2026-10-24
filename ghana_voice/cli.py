@@ -223,6 +223,8 @@ def main():
     sub_train.add_argument("--logging-steps", type=int, default=20)
     sub_train.add_argument("--no-ref", action="store_true", default=True, help="Train zero-ref direct TTS without reference audio")
     sub_train.add_argument("--eval-cer", action="store_true", default=False, help="Enable online ASR CER eval (default: False, eval_loss only)")
+    sub_train.add_argument("--no-eval-cer", dest="eval_cer", action="store_false",
+                           help="Skip ASR CER eval (the default); early-stop and pick the best checkpoint on eval_loss")
 
     # Command: merge
     sub_merge = subparsers.add_parser("merge", help="Merge LoRA adapter into base model")

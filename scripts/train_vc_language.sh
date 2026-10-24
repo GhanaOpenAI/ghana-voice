@@ -37,7 +37,7 @@ ghana-voice train \
     --run-name "$RUN_NAME" \
     --base-model "$BASE_MODEL" \
     --no-ref \
-    --eval-cer \
+    --no-eval-cer \
     --epochs 40 \
     --learning-rate 5e-5 \
     --batch-size 8 \

@@ -578,8 +578,9 @@ def train(data_dir: str, output_dir: str, run_name: str,
             ))
             print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences, no_ref={no_ref}).")
         else:
-            callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience))
-            print(f"Registered EarlyStoppingCallback on eval_loss (patience={early_stopping_patience}).")
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience,
+                                                   early_stopping_threshold=0.005))
+            print(f"Registered EarlyStoppingCallback on eval_loss (patience={early_stopping_patience}, min delta 0.005).")
 
     trainer = Trainer(
         model=model,
