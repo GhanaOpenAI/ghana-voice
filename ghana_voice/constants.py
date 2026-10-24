@@ -28,7 +28,7 @@ MAX_REF_CODES = 200
 DEFAULT_TEMPERATURE = 0.7
 DEFAULT_TOP_P = 0.8
 DEFAULT_TOP_K = 50
-DEFAULT_REPETITION_PENALTY = 1.0
+DEFAULT_REPETITION_PENALTY = 1.15
 
 # Punctuation character sets for cleaning reference prompts
 PUNCT_SET = set(string.punctuation) | set("“”‘’–—…«»")
