@@ -107,6 +107,9 @@ def get_prompts_for_language(lang_name: str, dataset_dir: str = None):
     If not found, dynamically pulls held-out test sentences directly from the language's clean dataset.
     """
     cleaned = lang_name.lower().strip()
+    # Exact name first: substring matching sends "dagaare" to "ga".
+    if cleaned in LANGUAGE_SAMPLE_PROMPTS:
+        return LANGUAGE_SAMPLE_PROMPTS[cleaned]
     for k, v in LANGUAGE_SAMPLE_PROMPTS.items():
         if k in cleaned or cleaned in k:
             return v
