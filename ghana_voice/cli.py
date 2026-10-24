@@ -46,6 +46,10 @@ def run_pipeline(args):
     else:
         print("Data already prepared, skipping prep step.")
 
+    if args.english_ratio > 0:
+        from .dataset import add_english_topup
+        add_english_topup(data_dir, args.english_ratio, args.vc_voice, args.vc_root)
+
     print("\n" + "=" * 60)
     print("STEP 2: ENCODING AUDIO WITH NEUCODEC")
     print("=" * 60)
@@ -181,6 +185,17 @@ def main():
     sub_prep.add_argument("--max-dur", type=float, default=15.0)
     sub_prep.add_argument("--per-lang", type=int, default=0)
     sub_prep.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
+    sub_prep.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC-converted English: English hours as a fraction of your data hours, e.g. 0.3 (default 0 = your data only; needs --vc-voice)")
+    sub_prep.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz for the English clips; default downloads from the Hub")
+
+    # Command: build-dataset
+    sub_bd = subparsers.add_parser("build-dataset", help="Build an encoded fine-tuning dataset from VC-converted audio only (+ English top-up)")
+    sub_bd.add_argument("--lang", required=True)
+    sub_bd.add_argument("--out-dir", required=True)
+    sub_bd.add_argument("--hours", type=float, default=10.0)
+    sub_bd.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC English: English hours as a fraction of language hours, e.g. 0.3 (default 0 = language only)")
+    sub_bd.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz; default downloads from the Hub")
+    sub_bd.add_argument("--batch-size", type=int, default=32)
 
     # Command: encode
     sub_enc = subparsers.add_parser("encode", help="NeuCodec encode prepared audio")
@@ -256,11 +271,15 @@ def main():
     sub_run.add_argument("--max-dur", type=float, default=15.0)
     sub_run.add_argument("--per-lang", type=int, default=0)
     sub_run.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
+    sub_run.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC-converted English: English hours as a fraction of your data hours, e.g. 0.3 (default 0 = your data only; needs --vc-voice)")
+    sub_run.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz for the English clips; default downloads from the Hub")
 
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)
+    if args.command in ("prep", "run") and args.english_ratio > 0 and not args.vc_voice:
+        parser.error("--english-ratio needs --vc-voice so the English clips match the voice of your data")
 
     if args.command == "speak":
         from .engine import GhanaVoice
@@ -286,6 +305,9 @@ def main():
         print_languages_table(args.tier)
     elif args.command == "list-vc-voices":
         print_vc_voices_table()
+    elif args.command == "build-dataset":
+        from .dataset import build_vc_dataset
+        build_vc_dataset(args.lang, args.out_dir, args.hours, args.english_ratio, args.vc_root, args.batch_size)
     elif args.command == "prep":
         info = get_language_info(args.lang)
         print(f"\n[Language Info] {info['display']} | Tier {info['tier']} (Target data: {info['rec_hours']})")
@@ -296,6 +318,9 @@ def main():
         elif args.input_dir:
             prep_local_folder(args.input_dir, args.metadata_file, args.out_dir, args.lang,
                               args.min_dur, args.max_dur, args.per_lang, args.vc_voice)
+        if args.english_ratio > 0:
+            from .dataset import add_english_topup
+            add_english_topup(args.out_dir, args.english_ratio, args.vc_voice, args.vc_root)
     elif args.command == "encode":
         from .encode import encode_dataset
         encode_dataset(args.data_dir, args.metadata, args.output, args.batch_size)

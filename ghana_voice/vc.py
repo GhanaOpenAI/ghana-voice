@@ -2,10 +2,18 @@
 Voice Conversion integration for ghana-voice using africa-female-vc.
 Allows users to optionally convert real speech training audio into any of 21 African female voices
 (e.g., 'clear-high-slow' for native Twi female voice, 'warm-high' for Hausa, etc.).
+
+Seed-VC pins its own torch/transformers versions, so it usually cannot share the
+training environment. Set GHANA_VOICE_VC_PYTHON to the Python of an environment
+with africa-female-vc installed and conversion runs there in a worker process.
 """
 
 import io
 import logging
+import os
+import subprocess
+import sys
+import tempfile
 from pathlib import Path
 from typing import Dict, List, Optional, Union
 
@@ -17,6 +25,42 @@ logger = logging.getLogger("ghana_voice.vc")
 
 # Cached voice converter instance
 _CONVERTER_INSTANCE = None
+_WORKER = None
+_VC_DIFFUSION_STEPS = 30
+
+
+class _VCWorker:
+    """Seed-VC in a separate Python (GHANA_VOICE_VC_PYTHON), model loaded once."""
+
+    def __init__(self, python: str, voice_name: str):
+        self.voice_name = voice_name
+        self.tmp = tempfile.TemporaryDirectory(prefix="ghana_voice_vc_")
+        worker = os.path.join(os.path.dirname(os.path.abspath(__file__)), "vc_worker.py")
+        self.proc = subprocess.Popen(
+            [python, worker, voice_name, str(_VC_DIFFUSION_STEPS)],
+            stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.DEVNULL, text=True,
+        )
+        status = self.proc.stdout.readline().strip()
+        if status != "ready":
+            self.close()
+            raise RuntimeError(f"Voice conversion worker failed to start ({python}): {status or 'no output'}")
+
+    def convert(self, wav: np.ndarray, sr: int) -> tuple:
+        src = os.path.join(self.tmp.name, "in.wav")
+        dst = os.path.join(self.tmp.name, "out.wav")
+        sf.write(src, wav, sr)
+        self.proc.stdin.write(f"{src}\t{dst}\n")
+        self.proc.stdin.flush()
+        status = self.proc.stdout.readline().strip()
+        if status != "ok":
+            raise RuntimeError(f"Voice conversion failed: {status or 'worker exited'}")
+        return sf.read(dst)
+
+    def close(self):
+        if self.proc.poll() is None:
+            self.proc.stdin.close()
+            self.proc.wait(timeout=60)
+        self.tmp.cleanup()
 
 
 def get_available_vc_voices() -> Dict[str, dict]:
@@ -56,12 +100,32 @@ def convert_audio(
     Returns:
         1D float32 numpy array of the voice-converted audio.
     """
+    # Load audio
+    if isinstance(audio_arr_or_path, (str, Path)):
+        wav, in_sr = sf.read(str(audio_arr_or_path))
+    else:
+        wav = audio_arr_or_path
+        in_sr = sr
+    if wav.ndim > 1:
+        wav = wav.mean(axis=1)
+
+    vc_python = os.environ.get("GHANA_VOICE_VC_PYTHON")
+    if vc_python:
+        global _WORKER
+        if _WORKER is None or _WORKER.voice_name != voice_name:
+            if _WORKER is not None:
+                _WORKER.close()
+            _WORKER = _VCWorker(vc_python, voice_name)
+        converted_wav, out_sr = _WORKER.convert(np.asarray(wav, dtype=np.float32), in_sr)
+        return _resample(converted_wav, out_sr, target_sr)
+
     try:
         from africa_female_vc.engine import VoiceConverter
     except ImportError:
         raise ImportError(
             "africa-female-vc is required for voice conversion. "
-            "Install via: pip install git+https://github.com/AfriSpeech/africa-female-vc.git"
+            "Install via: pip install git+https://github.com/AfriSpeech/africa-female-vc.git "
+            "or set GHANA_VOICE_VC_PYTHON to a Python that has it."
         )
 
     global _CONVERTER_INSTANCE
@@ -69,20 +133,20 @@ def convert_audio(
         logger.info(f"[GhanaVoice VC] Initializing VoiceConverter for '{voice_name}' on {device}...")
         _CONVERTER_INSTANCE = VoiceConverter(
             voice=voice_name,
-            diffusion_steps=30,
-            device=device,
+            diffusion_steps=_VC_DIFFUSION_STEPS,
             install_deps=False,
         )
         _CONVERTER_INSTANCE.load()
         _CONVERTER_INSTANCE.voice_name = voice_name
 
-    # Load audio
-    if isinstance(audio_arr_or_path, (str, Path)):
-        wav, in_sr = sf.read(str(audio_arr_or_path))
-    else:
-        wav = audio_arr_or_path
-        in_sr = sr
-
     # Run conversion
-    converted_wav = _CONVERTER_INSTANCE.convert_array(wav, sr=in_sr, target_sr=target_sr)
-    return converted_wav
+    converted_wav, out_sr = _CONVERTER_INSTANCE.convert_array(np.asarray(wav, dtype=np.float32), sampling_rate=in_sr)
+    return _resample(converted_wav, out_sr, target_sr)
+
+
+def _resample(wav: np.ndarray, sr: int, target_sr: int) -> np.ndarray:
+    wav = np.asarray(wav, dtype=np.float32)
+    if sr != target_sr:
+        import librosa
+        wav = librosa.resample(wav, orig_sr=sr, target_sr=target_sr)
+    return wav

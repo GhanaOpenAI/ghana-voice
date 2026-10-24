@@ -26,7 +26,7 @@ When fine-tuning from `ghanaopenai/ghana-voice-base` to create dedicated languag
 3. **Unified Single-Speaker Voice Conversion (Africa Female VC)**:
    - All language fine-tuning uses a consistent single-speaker voice persona to guarantee crisp, expressive, non-robotic zero-reference synthesis.
    - Users choose from **21 African female voices** (e.g., `clear-high-slow` for native Twi female voice, `warm-high` for Hausa, `bright-high` for Yoruba) via `--vc-voice <voice_name>` (default: `clear-high-slow`).
-   - The pipeline converts both the native language speech and the Ghanaian English reference speech into the identical target persona for seamless bilingual code-switching.
+   - English is optional: `--english-ratio 0.3` adds VC-converted Ghanaian English as separate whole clips (30% of your data's hours), converted into the same voice. Leave it at the default `0` to train on your own data only.
 
 To inspect all 21 available target voices from the command line:
 ```bash
@@ -88,13 +88,37 @@ ghana-voice serve --port 8000
 ## 🛠️ Fine-Tuning the Base Model with LoRA
 
 ### 1. Prepare Dataset (`prep`)
+`--input-dir` holds your audio plus a `metadata.csv` of `filename|text` lines.
 ```bash
-# Convert input audio into the target studio voice persona (e.g. clear-high-slow):
+# Your data only, converted into the voice you pick:
 ghana-voice prep \
   --input-dir path/to/recordings \
-  --out-dir datasets/my_data_studio \
+  --out-dir datasets/my_data \
   --lang twi \
   --vc-voice clear-high-slow
+
+# Same, plus VC-converted Ghanaian English worth 30% of your data's hours:
+ghana-voice prep \
+  --input-dir path/to/recordings \
+  --out-dir datasets/my_data \
+  --lang twi \
+  --vc-voice clear-high-slow \
+  --english-ratio 0.3
+```
+`--english-ratio` requires `--vc-voice`, so every clip shares one voice. English clips come from
+[`ghanaopenai/ghana-speech-female-22khz`](https://huggingface.co/datasets/ghanaopenai/ghana-speech-female-22khz)
+(`clear-high-slow`) and are converted again when you pick another voice.
+
+Seed-VC pins its own torch/transformers versions, so install `africa-female-vc` in a separate
+environment and point ghana-voice at it; conversion then runs in a worker process:
+```bash
+export GHANA_VOICE_VC_PYTHON=/path/to/seedvc-env/bin/python
+```
+
+To build a dataset straight from the published VC speech instead of your own recordings
+(already encoded, so skip `encode`):
+```bash
+ghana-voice build-dataset --lang asante_twi --out-dir datasets/asante_twi --hours 10 --english-ratio 0.3
 ```
 
 ### 2. NeuCodec Encoding (`encode`)
@@ -112,10 +136,13 @@ ghana-voice train \
   --output-dir output \
   --run-name my-twi-model \
   --no-ref \
-  --epochs 100 \
+  --epochs 40 \
   --learning-rate 5e-5 \
   --batch-size 8 \
   --grad-accum 4 \
+  --eval-fraction 0.03 \
+  --eval-steps 80 \
+  --save-steps 80 \
   --early-stopping-patience 10 \
   --eval-cer
 ```

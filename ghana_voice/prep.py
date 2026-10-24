@@ -18,7 +18,7 @@ from typing import Optional
 from tqdm import tqdm
 
 from .constants import SAMPLE_RATE_16K
-from .phonemize import phonemize_text, resolve_lang_code
+from .phonemize import phonemize_ipa, resolve_lang_code
 
 _MAX_STEM = 160
 
@@ -82,7 +82,7 @@ def prep_local_folder(
             if dur < min_dur or dur > max_dur:
                 continue
 
-            phones = phonemize_text(raw_text, code)
+            phones = phonemize_ipa(raw_text, code)
             if not phones.strip():
                 continue
 
@@ -152,7 +152,7 @@ def prep_hf_dataset(
             if not text:
                 continue
 
-            phones = phonemize_text(text, code)
+            phones = phonemize_ipa(text, code)
             if not phones.strip():
                 continue
 
