@@ -144,6 +144,8 @@ def main():
     sub_speak.add_argument("--out", default="output.wav", help="Output WAV path")
     sub_speak.add_argument("--device", default=None, help="Device to run on ('cpu' or 'cuda')")
     sub_speak.add_argument("--ipa", action="store_true", help="Input is already IPA text")
+    sub_speak.add_argument("--gguf", action="store_true",
+                           help="Use the GGUF Q8_0 model via llama.cpp (less reliable than PyTorch; for constrained hardware)")
     sub_speak.add_argument("--temperature", type=float, default=0.7)
     sub_speak.add_argument("--top-p", type=float, default=0.8)
     sub_speak.add_argument("--top-k", type=int, default=50)
@@ -285,7 +287,7 @@ def main():
 
     if args.command == "speak":
         from .engine import GhanaVoice
-        engine = GhanaVoice(lang=args.lang, model=args.model, device=args.device)
+        engine = GhanaVoice(lang=args.lang, model=args.model, device=args.device, use_gguf=args.gguf)
         engine.speak(
             text=args.text,
             output_file=args.out,

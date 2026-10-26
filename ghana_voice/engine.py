@@ -31,6 +31,26 @@ from .constants import (
     get_language_info,
 )
 
+# Training clips are 2.5-16 s. Prompts shorter than ~40 characters make the model pad the
+# speech with repeats ("Wo ho te sɛn?" alone came back as "wohotisen wohotisen"), so short
+# sentences are merged with their neighbours; 160 characters stays inside max_new_tokens.
+MIN_CHUNK_CHARS = 40
+MAX_CHUNK_CHARS = 160
+CHUNK_GAP_SECONDS = 0.15
+
+
+def split_text(text: str) -> list:
+    """Split text at sentence ends into chunks, merging sentences shorter than MIN_CHUNK_CHARS."""
+    parts = [p.strip() for p in re.split(r"(?<=[.!?;])\s+|\n+", text.strip()) if p.strip()]
+    chunks = []
+    for p in parts:
+        if chunks and (len(chunks[-1]) < MIN_CHUNK_CHARS or len(p) < MIN_CHUNK_CHARS) \
+                and len(chunks[-1]) + 1 + len(p) <= MAX_CHUNK_CHARS:
+            chunks[-1] = f"{chunks[-1]} {p}"
+        else:
+            chunks.append(p)
+    return chunks
+
 
 class GhanaVoice:
     """
@@ -38,8 +58,9 @@ class GhanaVoice:
 
     Supports:
     - Direct zero-reference synthesis from natural text or IPA.
-    - CPU inference via GGUF (llama.cpp) + NeuCodec ONNX decoder.
-    - GPU inference via PyTorch bfloat16 + CUDA NeuCodec.
+    - PyTorch inference (the default, recommended for production) on GPU or CPU.
+    - GGUF inference via llama.cpp (use_gguf=True) for resource-constrained setups. GGUF is
+      less reliable than PyTorch; use it with care and compare against PyTorch output.
     - Automatic model resolution: language-level model (ghanaopenai/ghana-voice_{lang})
       falling back to the multilingual base (ghanaopenai/ghana-voice-base).
     """
@@ -60,11 +81,8 @@ class GhanaVoice:
         self.torch_dtype = torch_dtype
         self.gguf_type = gguf_type
 
-        # Decide whether to use GGUF for CPU execution
-        if use_gguf is None:
-            self.use_gguf = (self.device == "cpu")
-        else:
-            self.use_gguf = use_gguf
+        # PyTorch unless GGUF is asked for explicitly (GGUF is less reliable; see class docstring)
+        self.use_gguf = bool(use_gguf)
 
         self.model_id = self._resolve_model_id(model)
         print(f"[GhanaVoice] Language: {self.lang_info['display']} ({self.iso}) | Model: {self.model_id} | Device: {self.device}")
@@ -103,16 +121,19 @@ class GhanaVoice:
         if model:
             return model
 
-        # Check for language-specific model repo: ghanaopenai/ghana-voice_{iso}
-        lang_repo = f"{LANG_MODEL_PREFIX}{self.iso}"
+        # Language models are named by language (ghanaopenai/ghana-voice_asante_twi); older ones by ISO code.
         from huggingface_hub import HfApi
         api = HfApi()
-        try:
-            api.repo_info(lang_repo)
-            return lang_repo
-        except Exception:
-            # Fall back to base foundation model
-            return DEFAULT_BASE_MODEL
+        name = re.sub(r"[\s-]+", "_", self.lang.strip().lower())
+        for candidate in dict.fromkeys([name, self.iso]):
+            lang_repo = f"{LANG_MODEL_PREFIX}{candidate}"
+            try:
+                api.repo_info(lang_repo)
+                return lang_repo
+            except Exception:
+                continue
+        # Fall back to base foundation model
+        return DEFAULT_BASE_MODEL
 
     def _init_pytorch_backend(self):
         from transformers import AutoModelForCausalLM
@@ -122,9 +143,8 @@ class GhanaVoice:
         self.pytorch_model = AutoModelForCausalLM.from_pretrained(
             self.model_id,
             torch_dtype=self.torch_dtype,
-            device_map=self.device,
             trust_remote_code=True,
-        ).eval()
+        ).to(self.device).eval()
 
         print("[GhanaVoice] Initializing NeuCodec PyTorch decoder ...")
         self.codec = NeuCodec.from_pretrained(NEUCODEC_REPO).to(self.device).eval()
@@ -202,8 +222,29 @@ class GhanaVoice:
         repetition_penalty: float = DEFAULT_REPETITION_PENALTY,
         max_new_tokens: int = 500,
     ) -> np.ndarray:
-        """Synthesize speech audio from text or pre-formatted IPA (24,000 Hz float32 array)."""
-        ipa_text = text.strip() if is_ipa else self.to_ipa(text)
+        """
+        Synthesize speech audio from text or pre-formatted IPA (24,000 Hz float32 array).
+
+        Text is spoken in sentence chunks of MIN_CHUNK_CHARS-MAX_CHUNK_CHARS characters joined by a
+        short pause, so long text is not cut off and very short sentences are never generated alone.
+        """
+        chunks = [text.strip()] if is_ipa else split_text(text)
+        gap = np.zeros(int(CHUNK_GAP_SECONDS * SAMPLE_RATE_24K), dtype=np.float32)
+        pieces = []
+        for chunk in chunks:
+            ipa_text = chunk if is_ipa else self.to_ipa(chunk)
+            if not ipa_text:
+                continue
+            wav = self._generate(ipa_text, temperature, top_p, top_k, repetition_penalty, max_new_tokens)
+            if len(wav):
+                pieces += [wav, gap]
+        if not pieces:
+            raise RuntimeError("Model generated no speech tokens. Check prompt length or input characters.")
+        return np.concatenate(pieces[:-1])
+
+    def _generate(self, ipa_text: str, temperature: float, top_p: float, top_k: int,
+                  repetition_penalty: float, max_new_tokens: int) -> np.ndarray:
+        """Generate one chunk of speech from IPA."""
         prompt = f"{TOKEN_TEXT_START}{ipa_text}{TOKEN_TEXT_END}{TOKEN_SPEECH_START}"
 
         if self.use_gguf and self.llm is not None:
@@ -243,7 +284,7 @@ class GhanaVoice:
             speech_ids = [int(n) for n in re.findall(r"<\|speech_(\d+)\|>", gen_str)]
 
         if not speech_ids:
-            raise RuntimeError("Model generated no speech tokens. Check prompt length or input characters.")
+            return np.zeros(0, dtype=np.float32)
 
         # Decode speech tokens to 24 kHz waveform
         if self.codec_onnx is not None:

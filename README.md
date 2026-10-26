@@ -53,8 +53,9 @@ pip install -e .
 ```python
 from ghana_voice import GhanaVoice
 
-# Auto-resolves model from HF (ghanaopenai/ghana-voice_twi or ghana-voice-base):
-voice = GhanaVoice(lang="twi", device="cpu")
+# Auto-resolves the language model from HF (ghanaopenai/ghana-voice_asante_twi), else ghana-voice-base.
+# Runs the PyTorch weights, recommended for production (GPU if available, else CPU):
+voice = GhanaVoice(lang="asante_twi")
 
 # Zero-reference synthesis directly from natural text:
 audio_array = voice.speak("Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo.", output_file="akwaaba.wav")
@@ -63,13 +64,19 @@ audio_array = voice.speak("Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo.", o
 ### 2. Command Line Interface (`ghana-voice speak`)
 
 ```bash
-# Direct CPU synthesis (runs on any laptop without GPU):
 ghana-voice speak \
-  --lang twi \
+  --lang asante_twi \
   --text "Akwaaba, yɛbɔ mpae sɛ Onyankopɔn bɛhyira wo." \
-  --device cpu \
   --out twi.wav
 ```
+
+Text is converted to word-separated IPA with africa-g2p, the same format the models were trained on,
+and spoken in sentence chunks: long text is split at sentence ends, and short sentences are merged
+with their neighbours, because very short prompts make the model repeat itself.
+
+> **PyTorch vs GGUF**: use the PyTorch weights in production. The GGUF files (`--gguf`, or
+> `GhanaVoice(..., use_gguf=True)`) are less reliable; use them with care, only where resources are
+> constrained, and compare against PyTorch output.
 
 ### 3. Interactive Web UI (`ghana-voice web`)
 
@@ -155,7 +162,8 @@ ghana-voice export-gguf \
   --out-dir output/my-twi-model/gguf \
   --quant Q8_0
 ```
-> **Note on CPU Quantization**: Ghana Voice defaults exclusively to **GGUF Q8_0 (8-bit)** on CPU. Q8_0 preserves near-lossless discrete acoustic token logits without the quality degradation and acoustic artifacts found in 4-bit quantizations.
+> **Note on GGUF**: GGUF exports (Q8_0, Q4_K_M) are for resource-constrained setups and are less reliable
+> than the PyTorch weights; use them with care. Prefer Q8_0 over Q4_K_M, and use PyTorch in production.
 
 ---
 
