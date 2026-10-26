@@ -167,5 +167,32 @@ ghana-voice export-gguf \
 
 ---
 
+## Example Fine-Tunes
+
+Nine language models fine-tuned from `ghana-voice-base` on 10 h of voice-converted speech each
+(LoRA, eval-loss early stopping), as worked examples of the recipe above:
+[Asante Twi](https://huggingface.co/ghanaopenai/ghana-voice_asante_twi),
+[Akuapem Twi](https://huggingface.co/ghanaopenai/ghana-voice_akuapem_twi),
+[Anyin](https://huggingface.co/ghanaopenai/ghana-voice_anyin),
+[Avatime](https://huggingface.co/ghanaopenai/ghana-voice_avatime),
+[Bassar](https://huggingface.co/ghanaopenai/ghana-voice_bassar),
+[Bimoba](https://huggingface.co/ghanaopenai/ghana-voice_bimoba),
+[Birifor](https://huggingface.co/ghanaopenai/ghana-voice_birifor),
+[Bissa](https://huggingface.co/ghanaopenai/ghana-voice_bissa) and
+[Buli](https://huggingface.co/ghanaopenai/ghana-voice_buli).
+
+## Known Limitations
+
+- **Very short inputs.** The models were trained on 2.5-16 s clips and do not reliably stop after a
+  one- to three-word phrase: on the nsanku-TTS benchmark the Akuapem Twi model read full sentences
+  well (Bible sentences: CER 0.32, SpeechBERTScore 0.71) but babbled on short finance phrases such as
+  "Medɔ wo". `GhanaVoice.synthesize` merges short sentences with their neighbours to avoid this; a
+  phrase on its own has nothing to merge with. Fine-tunes that need short phrases should include
+  short utterances in their training data.
+- **Base model runaways.** `ghana-voice-base` keeps talking past the end of the sentence more often
+  than the fine-tunes (about a third of Dangme benchmark sentences); fine-tune for production use.
+- **Encode at 16 kHz.** NeuCodec's encoder expects 16 kHz audio (`ghana-voice encode` does this).
+  Encoding audio at any other rate gives codes at the wrong rate and models that never stop.
+
 ## License
 Apache-2.0. Built by the GhanaOpenAI team.

@@ -33,7 +33,8 @@ from .constants import (
 
 # Training clips are 2.5-16 s. Prompts shorter than ~40 characters make the model pad the
 # speech with repeats ("Wo ho te sɛn?" alone came back as "wohotisen wohotisen"), so short
-# sentences are merged with their neighbours; 160 characters stays inside max_new_tokens.
+# sentences are merged with their neighbours. A 160-character chunk can need ~13 s of speech, so
+# max_new_tokens defaults to 750 (15 s at 50 codes/s); 500 cut the longest chunks off mid-word.
 MIN_CHUNK_CHARS = 40
 MAX_CHUNK_CHARS = 160
 CHUNK_GAP_SECONDS = 0.15
@@ -220,7 +221,7 @@ class GhanaVoice:
         top_p: float = DEFAULT_TOP_P,
         top_k: int = DEFAULT_TOP_K,
         repetition_penalty: float = DEFAULT_REPETITION_PENALTY,
-        max_new_tokens: int = 500,
+        max_new_tokens: int = 750,
     ) -> np.ndarray:
         """
         Synthesize speech audio from text or pre-formatted IPA (24,000 Hz float32 array).
