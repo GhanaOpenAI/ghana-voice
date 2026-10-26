@@ -26,14 +26,14 @@ def export_to_gguf(
         model_dir: Directory containing PyTorch safetensors model and tokenizer.
         out_dir: Output directory for GGUF files.
         name: Base filename prefix for GGUF models (e.g. "ghana-voice_twi").
-        quant_types: List of quantization types, default: ["Q4_K_M", "Q8_0"].
+        quant_types: List of quantization types, default: ["Q8_0"].
         clean_f16: Whether to delete the intermediate uncompressed F16 GGUF file.
 
     Returns:
         List of generated GGUF file paths.
     """
     if quant_types is None:
-        quant_types = ["Q4_K_M", "Q8_0"]
+        quant_types = ["Q8_0"]
 
     m_path = Path(model_dir)
     o_path = Path(out_dir)
@@ -46,6 +46,24 @@ def export_to_gguf(
         base_name = m_path.parent.name.replace("neu-tts-ghana-", "ghana-voice_")
     else:
         base_name = m_path.name
+
+    # Ensure config.json has rope_theta = 10000.0 so convert_hf_to_gguf embeds the correct RoPE frequency
+    cfg_file = m_path / "config.json"
+    if cfg_file.exists():
+        import json
+        with open(cfg_file, "r") as f:
+            cfg = json.load(f)
+        modified = False
+        if cfg.get("rope_theta") != 10000.0:
+            cfg["rope_theta"] = 10000.0
+            modified = True
+        if "rope_parameters" in cfg and cfg["rope_parameters"].get("rope_theta") != 10000.0:
+            cfg["rope_parameters"]["rope_theta"] = 10000.0
+            modified = True
+        if modified:
+            with open(cfg_file, "w") as f:
+                json.dump(cfg, f, indent=2)
+            print("[GGUF Export] Verified and aligned config.json rope_theta to 10000.0.")
 
     f16_file = o_path / f"{base_name}-f16.gguf"
     generated_files = []

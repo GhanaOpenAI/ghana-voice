@@ -46,6 +46,10 @@ def run_pipeline(args):
     else:
         print("Data already prepared, skipping prep step.")
 
+    if args.english_ratio > 0:
+        from .dataset import add_english_topup
+        add_english_topup(data_dir, args.english_ratio, args.vc_voice, args.vc_root)
+
     print("\n" + "=" * 60)
     print("STEP 2: ENCODING AUDIO WITH NEUCODEC")
     print("=" * 60)
@@ -140,6 +144,8 @@ def main():
     sub_speak.add_argument("--out", default="output.wav", help="Output WAV path")
     sub_speak.add_argument("--device", default=None, help="Device to run on ('cpu' or 'cuda')")
     sub_speak.add_argument("--ipa", action="store_true", help="Input is already IPA text")
+    sub_speak.add_argument("--gguf", action="store_true",
+                           help="Use the GGUF Q8_0 model via llama.cpp (less reliable than PyTorch; for constrained hardware)")
     sub_speak.add_argument("--temperature", type=float, default=0.7)
     sub_speak.add_argument("--top-p", type=float, default=0.8)
     sub_speak.add_argument("--top-k", type=int, default=50)
@@ -159,7 +165,7 @@ def main():
     sub_gguf.add_argument("--model-dir", required=True, help="Directory containing PyTorch model weights")
     sub_gguf.add_argument("--out-dir", required=True, help="Output directory for GGUF files")
     sub_gguf.add_argument("--name", default=None, help="Base name prefix for GGUFs (e.g. ghana-voice_twi)")
-    sub_gguf.add_argument("--quant", nargs="+", default=["Q4_K_M", "Q8_0"], help="Quantization types")
+    sub_gguf.add_argument("--quant", nargs="+", default=["Q8_0"], help="Quantization types (default: Q8_0)")
 
     # Command: list-langs
     sub_langs = subparsers.add_parser("list-langs", help="List all supported languages, tiers, and data requirements")
@@ -181,6 +187,17 @@ def main():
     sub_prep.add_argument("--max-dur", type=float, default=15.0)
     sub_prep.add_argument("--per-lang", type=int, default=0)
     sub_prep.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
+    sub_prep.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC-converted English: English hours as a fraction of your data hours, e.g. 0.3 (default 0 = your data only; needs --vc-voice)")
+    sub_prep.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz for the English clips; default downloads from the Hub")
+
+    # Command: build-dataset
+    sub_bd = subparsers.add_parser("build-dataset", help="Build an encoded fine-tuning dataset from VC-converted audio only (+ English top-up)")
+    sub_bd.add_argument("--lang", required=True)
+    sub_bd.add_argument("--out-dir", required=True)
+    sub_bd.add_argument("--hours", type=float, default=10.0)
+    sub_bd.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC English: English hours as a fraction of language hours, e.g. 0.3 (default 0 = language only)")
+    sub_bd.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz; default downloads from the Hub")
+    sub_bd.add_argument("--batch-size", type=int, default=32)
 
     # Command: encode
     sub_enc = subparsers.add_parser("encode", help="NeuCodec encode prepared audio")
@@ -197,17 +214,19 @@ def main():
     sub_train.add_argument("--run-name", required=True)
     sub_train.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_train.add_argument("--full-sft", action="store_true", default=False, help="Train all 100%% of parameters (Full SFT, no LoRA)")
-    sub_train.add_argument("--epochs", type=int, default=50)
+    sub_train.add_argument("--epochs", type=int, default=100)
     sub_train.add_argument("--learning-rate", type=float, default=5e-5)
     sub_train.add_argument("--batch-size", type=int, default=8)
     sub_train.add_argument("--grad-accum", type=int, default=4)
     sub_train.add_argument("--eval-fraction", type=float, default=0.05)
-    sub_train.add_argument("--early-stopping-patience", type=int, default=10)
+    sub_train.add_argument("--early-stopping-patience", type=int, default=12)
     sub_train.add_argument("--eval-steps", type=int, default=100)
     sub_train.add_argument("--save-steps", type=int, default=100)
     sub_train.add_argument("--logging-steps", type=int, default=20)
     sub_train.add_argument("--no-ref", action="store_true", default=True, help="Train zero-ref direct TTS without reference audio")
-    sub_train.add_argument("--eval-cer", action="store_true", default=True)
+    sub_train.add_argument("--eval-cer", action="store_true", default=False, help="Enable online ASR CER eval (default: False, eval_loss only)")
+    sub_train.add_argument("--no-eval-cer", dest="eval_cer", action="store_false",
+                           help="Skip ASR CER eval (the default); early-stop and pick the best checkpoint on eval_loss")
 
     # Command: merge
     sub_merge = subparsers.add_parser("merge", help="Merge LoRA adapter into base model")
@@ -245,26 +264,30 @@ def main():
     sub_run.add_argument("--split", default="train")
     sub_run.add_argument("--base-model", default=DEFAULT_BASE_MODEL)
     sub_run.add_argument("--output-dir", default="output")
-    sub_run.add_argument("--epochs", type=int, default=20)
+    sub_run.add_argument("--epochs", type=int, default=100)
     sub_run.add_argument("--learning-rate", type=float, default=5e-5)
     sub_run.add_argument("--batch-size", type=int, default=16, help="Encode batch size")
     sub_run.add_argument("--train-batch-size", type=int, default=8, help="Train batch size")
     sub_run.add_argument("--grad-accum", type=int, default=4)
     sub_run.add_argument("--eval-fraction", type=float, default=0.05)
-    sub_run.add_argument("--early-stopping-patience", type=int, default=4)
+    sub_run.add_argument("--early-stopping-patience", type=int, default=12)
     sub_run.add_argument("--min-dur", type=float, default=2.0)
     sub_run.add_argument("--max-dur", type=float, default=15.0)
     sub_run.add_argument("--per-lang", type=int, default=0)
     sub_run.add_argument("--vc-voice", default=None, help="Target voice from africa-female-vc (e.g. clear-high-slow). Default: None (keep real audio)")
+    sub_run.add_argument("--english-ratio", type=float, default=0.0, help="Mix in VC-converted English: English hours as a fraction of your data hours, e.g. 0.3 (default 0 = your data only; needs --vc-voice)")
+    sub_run.add_argument("--vc-root", default=None, help="Local copy of ghana-speech-female-22khz for the English clips; default downloads from the Hub")
 
     args = parser.parse_args()
     if not args.command:
         parser.print_help()
         sys.exit(1)
+    if args.command in ("prep", "run") and args.english_ratio > 0 and not args.vc_voice:
+        parser.error("--english-ratio needs --vc-voice so the English clips match the voice of your data")
 
     if args.command == "speak":
         from .engine import GhanaVoice
-        engine = GhanaVoice(lang=args.lang, model=args.model, device=args.device)
+        engine = GhanaVoice(lang=args.lang, model=args.model, device=args.device, use_gguf=args.gguf)
         engine.speak(
             text=args.text,
             output_file=args.out,
@@ -286,6 +309,9 @@ def main():
         print_languages_table(args.tier)
     elif args.command == "list-vc-voices":
         print_vc_voices_table()
+    elif args.command == "build-dataset":
+        from .dataset import build_vc_dataset
+        build_vc_dataset(args.lang, args.out_dir, args.hours, args.english_ratio, args.vc_root, args.batch_size)
     elif args.command == "prep":
         info = get_language_info(args.lang)
         print(f"\n[Language Info] {info['display']} | Tier {info['tier']} (Target data: {info['rec_hours']})")
@@ -296,6 +322,9 @@ def main():
         elif args.input_dir:
             prep_local_folder(args.input_dir, args.metadata_file, args.out_dir, args.lang,
                               args.min_dur, args.max_dur, args.per_lang, args.vc_voice)
+        if args.english_ratio > 0:
+            from .dataset import add_english_topup
+            add_english_topup(args.out_dir, args.english_ratio, args.vc_voice, args.vc_root)
     elif args.command == "encode":
         from .encode import encode_dataset
         encode_dataset(args.data_dir, args.metadata, args.output, args.batch_size)

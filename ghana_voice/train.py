@@ -315,13 +315,13 @@ def train(data_dir: str, output_dir: str, run_name: str,
           metadata_file: str = "metadata_encoded.csv",
           no_ref: bool = True,
           full_sft: bool = False,
-          epochs: int = 50, learning_rate: float = 5e-5,
+          epochs: int = 100, learning_rate: float = 5e-5,
           batch_size: int = 8, grad_accum: int = 4,
-          eval_fraction: float = 0.05, early_stopping_patience: int = 10,
+          eval_fraction: float = 0.05, early_stopping_patience: int = 12,
           eval_steps: int = 100, save_steps: int = 100, logging_steps: int = 20,
           lora_r: int = 16, lora_alpha: int = 32, lora_dropout: float = 0.05,
           max_len: int = 4096, seed: int = 42,
-          eval_cer: bool = True, asr_model: str = _ASR_MODEL_DEFAULT, asr_tokens: str = _ASR_TOKENS_DEFAULT):
+          eval_cer: bool = False, asr_model: str = _ASR_MODEL_DEFAULT, asr_tokens: str = _ASR_TOKENS_DEFAULT):
 
     from transformers import (
         AutoModelForCausalLM, AutoTokenizer, Trainer, TrainingArguments, EarlyStoppingCallback
@@ -436,6 +436,7 @@ def train(data_dir: str, output_dir: str, run_name: str,
         warmup_steps=warmup_steps,
         lr_scheduler_type="cosine",
         bf16=True,
+        tf32=True,
         logging_steps=logging_steps,
         save_steps=save_steps,
         eval_steps=eval_steps,
@@ -495,16 +496,17 @@ def train(data_dir: str, output_dir: str, run_name: str,
             detected_lang = "twi"
             if any(k in first_fn for k in ["asante", "akuapem", "twi"]):
                 detected_lang = "twi"
+            # Dagaare before Dagbani and Ga: 'dagaare' contains both 'dag' and 'ga'.
+            elif any(k in first_fn for k in ["dga", "dagaare"]):
+                detected_lang = "dga"
+            elif "dag" in first_fn:
+                detected_lang = "dag"
             elif any(k in first_fn for k in ["gaa", "ga"]):
                 detected_lang = "gaa"
             elif "ewe" in first_fn:
                 detected_lang = "ewe"
             elif any(k in first_fn for k in ["fat", "fante"]):
                 detected_lang = "fat"
-            elif "dag" in first_fn:
-                detected_lang = "dag"
-            elif any(k in first_fn for k in ["dga", "dagaare"]):
-                detected_lang = "dga"
             elif any(k in first_fn for k in ["gur", "frafra"]):
                 detected_lang = "gur"
             elif any(k in first_fn for k in ["nzi", "nzema"]):
@@ -519,11 +521,23 @@ def train(data_dir: str, output_dir: str, run_name: str,
                 detected_lang = "eng"
             else:
                 detected_lang = "twi"
+            # An exact language-name prefix (e.g. "bissa_00001.wav") overrides the guesses above.
+            from .constants import ALL_SUPPORTED_LANGUAGES
+            for name in sorted(ALL_SUPPORTED_LANGUAGES, key=len, reverse=True):
+                if first_fn.startswith(name + "_"):
+                    detected_lang = ALL_SUPPORTED_LANGUAGES[name]["iso"]
+                    break
 
-            test_texts = CANONICAL_TESTS.get(detected_lang, [
-                "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
-                "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
-            ])
+            # Held-out sentences shipped with the dataset take precedence over the built-in ones.
+            cer_file = os.path.join(data_dir, "cer_sentences.txt")
+            if os.path.exists(cer_file):
+                with open(cer_file, "r", encoding="utf-8") as f:
+                    test_texts = [ln.strip() for ln in f if ln.strip()]
+            else:
+                test_texts = CANONICAL_TESTS.get(detected_lang, [
+                    "Onyankopɔn yɛ ɔdɔ na ɔdɔ obiara wɔ wiase.",
+                    "Me kɔ sukuu da biara na mepɛ sɛ mesua ade.",
+                ])
 
             eval_samples = []
             from africa_g2p import AfricaPipeline
@@ -557,13 +571,16 @@ def train(data_dir: str, output_dir: str, run_name: str,
                 eval_samples.append({"chat": chat, "text": txt})
 
             callbacks.append(CEREvalCallback(eval_samples, tokenizer, asr_model, asr_tokens, codec))
+            callbacks.append(JointPlateauEarlyStoppingCallback(
+                patience=early_stopping_patience,
+                min_loss_delta=0.005,
+                min_cer_delta=0.005,
+            ))
             print(f"Registered online ASR CER evaluator ({len(eval_samples)} {detected_lang} validation sentences, no_ref={no_ref}).")
-
-        callbacks.append(JointPlateauEarlyStoppingCallback(
-            patience=early_stopping_patience,
-            min_loss_delta=0.005,
-            min_cer_delta=0.005,
-        ))
+        else:
+            callbacks.append(EarlyStoppingCallback(early_stopping_patience=early_stopping_patience,
+                                                   early_stopping_threshold=0.005))
+            print(f"Registered EarlyStoppingCallback on eval_loss (patience={early_stopping_patience}, min delta 0.005).")
 
     trainer = Trainer(
         model=model,
